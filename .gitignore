@@ -6,6 +6,38 @@ Thumbs.db
 .vscode/
 .idea/
 
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+build/
+coverage/
+*.tsbuildinfo
+
+# Expo / native
+.expo/
+.expo-shared/
+.tamagui/
+mobile/android/
+mobile/ios/
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
 # Local env or sensitive files
+.env
+.env.*
+!.env.example
 *.env
 *.local
+
+# Logs
+*.log
+npm-debug.log*
+
+# Supabase local state
+supabase/.branches/
+supabase/.temp/

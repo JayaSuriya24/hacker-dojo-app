@@ -1,0 +1,23 @@
+{
+  "extends": "expo/tsconfig.base",
+  "compilerOptions": {
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
+    "jsx": "react-jsx",
+    "moduleResolution": "bundler",
+    // Jest's globals are not ambient by default in a workspace where @types is
+    // hoisted to the root. Expo's own globals (`__DEV__`, the asset modules)
+    // come from `expo-env.d.ts` via a triple-slash reference, which this does
+    // not affect.
+    "types": ["jest"],
+    "paths": {
+      "~/*": ["./src/*"]
+    }
+  },
+  "include": ["**/*.ts", "**/*.tsx", ".expo/types/**/*.ts", "expo-env.d.ts"],
+  "exclude": ["node_modules", ".expo", "dist"]
+}
