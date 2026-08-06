@@ -9,6 +9,15 @@ import type { ExpoConfig } from 'expo/config';
  */
 
 const VARIANT = process.env['APP_VARIANT'] ?? 'production';
+
+/**
+ * The Apple Pay merchant id, created in the Apple Developer portal.
+ *
+ * Declared once and referenced by the entitlement, the Stripe plugin and
+ * `extra` — the three previously repeated the same literal, and a mismatch
+ * between them fails at the payment sheet rather than at build time.
+ */
+const MERCHANT_IDENTIFIER = 'merchant.org.hackerdojo.app';
 const IS_DEV = VARIANT === 'development';
 const IS_PREVIEW = VARIANT === 'preview';
 
@@ -65,7 +74,7 @@ const config: ExpoConfig = {
     entitlements: {
       'com.apple.developer.applesignin': ['Default'],
       // Apple Pay. The merchant id is created in the Apple Developer portal.
-      'com.apple.developer.in-app-payments': ['merchant.org.hackerdojo.app'],
+      'com.apple.developer.in-app-payments': [MERCHANT_IDENTIFIER],
     },
   },
 
@@ -123,7 +132,7 @@ const config: ExpoConfig = {
     [
       '@stripe/stripe-react-native',
       {
-        merchantIdentifier: 'merchant.org.hackerdojo.app',
+        merchantIdentifier: MERCHANT_IDENTIFIER,
         enableGooglePay: true,
       },
     ],
@@ -146,6 +155,7 @@ const config: ExpoConfig = {
     supabaseUrl: process.env['EXPO_PUBLIC_SUPABASE_URL'] ?? '',
     supabaseAnonKey: process.env['EXPO_PUBLIC_SUPABASE_ANON_KEY'] ?? '',
     stripePublishableKey: process.env['EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY'] ?? '',
+    merchantIdentifier: MERCHANT_IDENTIFIER,
     variant: VARIANT,
     eas: { projectId: process.env['EAS_PROJECT_ID'] ?? '00000000-0000-0000-0000-000000000000' },
   },

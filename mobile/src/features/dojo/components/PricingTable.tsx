@@ -1,5 +1,7 @@
 import { XStack, YStack } from 'tamagui';
 import { Button, Card, Chip, Text } from '~/components/ui';
+import { periodSuffix, resolvePeriod } from '~/features/payments/billingPeriod';
+import type { BillingPeriodChoice } from '~/features/payments/billingPeriod';
 import { formatCurrency } from '~/utils/format';
 import { space } from '~/theme/tokens';
 import type { Plan } from '~/types/domain';
@@ -19,19 +21,19 @@ export function PricingTable({
   isMember,
 }: {
   plans: Plan[];
-  period: 'mo' | 'yr';
+  period: BillingPeriodChoice;
   activePlanId?: string | undefined;
   onChoose: (plan: Plan) => void;
   isMember: boolean;
 }) {
-  const annual = period === 'yr';
-
   return (
     <YStack gap={space[4]}>
       {plans.map((plan) => {
-        // Add-ons bill monthly only; showing an annual price for one would be a
-        // number that does not exist.
-        const showAnnual = annual && !plan.isAddon && plan.priceAnnualCents !== null;
+        // `resolvePeriod` carries the add-on rule: an add-on bills monthly
+        // regardless of the toggle, so showing it an annual price would quote a
+        // number that does not exist in Stripe.
+        const effective = resolvePeriod(period, plan);
+        const showAnnual = effective === 'year';
         const cents = showAnnual ? (plan.priceAnnualCents as number) : plan.priceMonthlyCents;
         const isCurrent = isMember && plan.id === activePlanId;
 
@@ -54,7 +56,7 @@ export function PricingTable({
             <XStack alignItems="baseline" gap={space[2]} marginTop={space[3]}>
               <Text variant="monoLarge">{formatCurrency(cents)}</Text>
               <Text variant="small" tone="subtle">
-                {plan.isAddon ? '/mo add-on' : showAnnual ? '/yr' : '/mo'}
+                {periodSuffix(effective, plan.isAddon)}
               </Text>
             </XStack>
 

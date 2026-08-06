@@ -126,3 +126,15 @@ export function greetingFor(date = new Date()): string {
   if (hour < 18) return 'Afternoon';
   return 'Evening';
 }
+
+/**
+ * A file size a person reads rather than a byte count.
+ *
+ * Binary units (1024) because that is what both platforms' own file browsers
+ * report, so a 1.9MB file here is the 1.9MB the member saw in Photos.
+ */
+export function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}

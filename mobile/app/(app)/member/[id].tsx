@@ -42,7 +42,7 @@ export default function MemberSheet() {
           <Avatar
             name={member.name}
             initials={member.initials}
-            imageUrl={member.avatarPath}
+            imageUrl={member.avatarUrl}
             present={member.isHere}
             size={58}
             seed={member.id}

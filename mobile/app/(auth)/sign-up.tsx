@@ -307,7 +307,7 @@ export default function SignUpScreen() {
         />
 
         <Button
-          variant="solid"
+          variant="primary"
           size="lg"
           fullWidth
           loading={isSubmitting}

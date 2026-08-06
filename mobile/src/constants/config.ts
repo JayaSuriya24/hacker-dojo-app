@@ -14,6 +14,7 @@ interface ExtraConfig {
   supabaseUrl: string;
   supabaseAnonKey: string;
   stripePublishableKey: string;
+  merchantIdentifier: string;
   variant: string;
 }
 
@@ -38,16 +39,39 @@ export const appConfig = {
   supabaseUrl: required('supabaseUrl', extra.supabaseUrl),
   supabaseAnonKey: required('supabaseAnonKey', extra.supabaseAnonKey),
   stripePublishableKey: extra.stripePublishableKey ?? '',
+  /**
+   * The Apple Pay merchant id. Read from config rather than repeated as a
+   * literal in the provider and the plugin, which is how those two drift.
+   */
+  merchantIdentifier: extra.merchantIdentifier ?? 'merchant.org.hackerdojo.app',
   variant: extra.variant ?? 'production',
   isProduction: (extra.variant ?? 'production') === 'production',
 } as const;
 
-/** Wall-clock facts about the space, used for copy and the "Open now" pill. */
+/**
+ * Wall-clock facts about the space, used for copy and the "Open now" pill.
+ *
+ * `timezone` is the same value `public.dojo_timezone()` returns and the server's
+ * `DOJO_TIMEZONE` holds. Opening hours are a property of the building, not of
+ * the phone looking at it — a member checking the app from an airport should
+ * still read "Open now" against Mountain View's clock.
+ */
 export const dojo = {
   addressLine1: '855 Maude Ave',
   addressLine2: 'Mountain View, CA 94043',
   ein: '26-4812213',
+  timezone: 'America/Los_Angeles',
   publicHours: { opensHour: 10, closesHour: 21 },
+  /**
+   * Public web pages the app links out to. Here rather than inline in a screen
+   * so a domain change is one edit, and so App Review's privacy-policy link can
+   * be verified against a single source.
+   */
+  urls: {
+    privacy: 'https://hackerdojo.org/privacy',
+    terms: 'https://hackerdojo.org/terms',
+    support: 'mailto:stewards@hackerdojo.org',
+  },
   transit: '5 min walk from Middlefield VTA\n1 min to Bus 21 · Free lot on site',
 } as const;
 

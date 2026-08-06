@@ -26,6 +26,8 @@ export const bookingApi = {
   cancel: (id: string) => api.delete<void>(`/bookings/${id}`),
 
   liveSession: () => api.get<LiveSession | null>('/me/session'),
+  /** Check in to the floor — what populates `sessions` and the occupancy dial. */
+  checkIn: (input: { resourceId?: string } = {}) => api.post<LiveSession>('/me/session', input),
   extendSession: () => api.post<LiveSession>('/me/session/extend'),
   endSession: () => api.post<LiveSession>('/me/session/end'),
 };

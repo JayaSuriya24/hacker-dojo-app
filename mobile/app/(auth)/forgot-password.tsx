@@ -52,7 +52,7 @@ export default function ForgotPasswordScreen() {
           </Card>
 
           <Button
-            variant="solid"
+            variant="primary"
             size="lg"
             fullWidth
             onPress={() => router.replace('/(auth)/sign-in')}
@@ -98,7 +98,7 @@ export default function ForgotPasswordScreen() {
         />
 
         <Button
-          variant="solid"
+          variant="primary"
           size="lg"
           fullWidth
           loading={isSubmitting}

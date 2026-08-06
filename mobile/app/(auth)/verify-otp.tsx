@@ -152,7 +152,7 @@ export default function VerifyOtpScreen() {
           />
 
           <Button
-            variant="solid"
+            variant="primary"
             size="lg"
             fullWidth
             loading={verifyForm.formState.isSubmitting}
@@ -244,7 +244,7 @@ export default function VerifyOtpScreen() {
         )}
 
         <Button
-          variant="solid"
+          variant="primary"
           size="lg"
           fullWidth
           loading={requestForm.formState.isSubmitting}

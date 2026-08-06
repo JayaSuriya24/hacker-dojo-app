@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { Alert, Linking, View } from 'react-native';
 import { router, Stack } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -11,7 +11,9 @@ import {
   ListSkeleton,
   Screen,
   Section,
+  Divider,
   Segmented,
+  StatusPill,
   Text,
   Toggle,
 } from '~/components/ui';
@@ -22,6 +24,11 @@ import {
   useUpdateProfile,
 } from '~/features/profile/hooks/useProfile';
 import { useRegisterPushToken } from '~/hooks/useNotifications';
+import { useAvatarUpload, useDeleteAvatar } from '~/features/uploads/hooks/useUploads';
+import { useBillingPortal } from '~/features/payments/hooks/usePayments';
+import { useIsStaff } from '~/features/staff/hooks/useStaff';
+import { useDoorHistory } from '~/features/access/hooks/useAccess';
+import { userMessage } from '~/services/api/errors';
 import { authService } from '~/features/auth/services/auth.service';
 import { usePreferencesStore } from '~/store/preferences.store';
 import { usePalette } from '~/providers/ThemeProvider';
@@ -51,6 +58,22 @@ export default function SettingsScreen() {
   const setHaptics = usePreferencesStore((state) => state.setHapticsEnabled);
 
   const [signingOut, setSigningOut] = useState(false);
+  const [photoError, setPhotoError] = useState<string | null>(null);
+
+  const avatar = useAvatarUpload();
+  const removeAvatar = useDeleteAvatar();
+  const billingPortal = useBillingPortal();
+  const isStaff = useIsStaff();
+  const doorHistory = useDoorHistory();
+
+  const changePhoto = useCallback(async () => {
+    setPhotoError(null);
+    try {
+      await avatar.pickAndUpload();
+    } catch (error) {
+      setPhotoError(userMessage(error));
+    }
+  }, [avatar]);
 
   const confirmSignOut = () => {
     Alert.alert('Sign out?', 'You will need your password or a one-time code to sign back in.', [
@@ -116,7 +139,7 @@ export default function SettingsScreen() {
                 <Avatar
                   name={me.name}
                   initials={me.initials}
-                  imageUrl={me.avatarPath}
+                  imageUrl={me.avatarUrl}
                   size={52}
                   seed={me.id}
                 />
@@ -129,6 +152,39 @@ export default function SettingsScreen() {
                     {me.isActiveMember ? (me.membership?.planName ?? 'Member') : 'Guest'}
                   </Text>
                 </YStack>
+              </XStack>
+
+              {photoError ? (
+                <View accessibilityLiveRegion="assertive" accessibilityRole="alert">
+                  <Text variant="caption" tone="error">
+                    {photoError}
+                  </Text>
+                </View>
+              ) : null}
+
+              <XStack gap={space[3]} marginTop={space[3]}>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  loading={avatar.isPending}
+                  disabled={avatar.isPending || removeAvatar.isPending}
+                  onPress={() => void changePhoto()}
+                  accessibilityLabel="Change your profile photo"
+                >
+                  {me.avatarUrl ? 'Change photo' : 'Add a photo'}
+                </Button>
+                {me.avatarUrl ? (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    loading={removeAvatar.isPending}
+                    disabled={avatar.isPending || removeAvatar.isPending}
+                    onPress={() => removeAvatar.mutate()}
+                    accessibilityLabel="Remove your profile photo"
+                  >
+                    Remove
+                  </Button>
+                ) : null}
               </XStack>
 
               {me.skills.length ? (
@@ -170,14 +226,14 @@ export default function SettingsScreen() {
                       value={notifications.data?.events ?? false}
                       onChange={(value) => void toggleNotification('events', value)}
                     />
-                    <View style={{ height: 1, backgroundColor: palette.border }} />
+                    <Divider variant="inset" spacing={0} />
                     <Toggle
                       label="Booking reminders"
                       description="15 minutes before a reservation starts"
                       value={notifications.data?.bookings ?? false}
                       onChange={(value) => void toggleNotification('bookings', value)}
                     />
-                    <View style={{ height: 1, backgroundColor: palette.border }} />
+                    <Divider variant="inset" spacing={0} />
                     <Toggle
                       label="Weekly community digest"
                       description="A Monday summary of what's on"
@@ -213,18 +269,99 @@ export default function SettingsScreen() {
               </Card>
             </Section>
 
+            {/* ---- Door activity ------------------------------------------ */}
+            {me.isActiveMember ? (
+              <Section title="Door activity">
+                <Card padded="tight" gap={space[2]}>
+                  {doorHistory.isPending ? (
+                    <ListSkeleton count={2} height={28} />
+                  ) : (doorHistory.data ?? []).length === 0 ? (
+                    <Text variant="small" tone="subtle">
+                      No door events yet.
+                    </Text>
+                  ) : (
+                    /*
+                     * The member's own audit trail. Every unlock attempt writes a
+                     * row, granted or refused, and showing them the refusals is
+                     * the point: "why wouldn't the door open at 11pm" is
+                     * answerable now rather than a shrug at the front desk.
+                     */
+                    (doorHistory.data ?? []).slice(0, 5).map((entry, index) => (
+                      <YStack key={entry.id}>
+                        {index > 0 ? <Divider variant="inset" spacing={space[2]} /> : null}
+                        <XStack alignItems="center" gap={space[3]} paddingVertical={space[1]}>
+                          <StatusPill
+                            label={entry.granted ? 'Opened' : 'Refused'}
+                            tone={entry.granted ? 'ok' : 'error'}
+                            bordered={false}
+                          />
+                          <Text variant="caption" tone="subtle" flex={1} numberOfLines={1}>
+                            {entry.reason ? entry.reason.replace(/_/g, ' ') : ''}
+                          </Text>
+                          <Text variant="mono" tone="subtle">
+                            {new Date(entry.at).toLocaleString(undefined, {
+                              month: 'short',
+                              day: 'numeric',
+                              hour: 'numeric',
+                              minute: '2-digit',
+                            })}
+                          </Text>
+                        </XStack>
+                      </YStack>
+                    ))
+                  )}
+                </Card>
+              </Section>
+            ) : null}
+
+            {/* ---- Verification ------------------------------------------- */}
+            <Section title="Verification">
+              <Card padded="tight" gap={space[2]}>
+                <Text variant="small" tone="muted">
+                  The Student and Veteran rates need one document on file.
+                </Text>
+                <YStack alignSelf="flex-start" marginTop={space[2]}>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onPress={() => router.push('/(app)/verification')}
+                  >
+                    Upload a document
+                  </Button>
+                </YStack>
+              </Card>
+            </Section>
+
+            {/* ---- Staff --------------------------------------------------- */}
+            {isStaff ? (
+              <Section title="Staff">
+                <Button
+                  variant="secondary"
+                  fullWidth
+                  onPress={() => router.push('/(app)/staff')}
+                  accessibilityHint="Opens the front desk queue"
+                >
+                  Front desk queue
+                </Button>
+              </Section>
+            ) : null}
+
             {/* ---- Account ------------------------------------------------ */}
             <Section title="Account">
               <YStack gap={space[3]}>
-                {me.isActiveMember ? (
+                {/*
+                  Stripe's own Billing Portal. The previous link was a literal
+                  `billing.stripe.com/p/login/hackerdojo`, which is not a real
+                  portal URL — a member tapping this reached a Stripe 404. The
+                  session is minted per tap because portal links are single-use.
+                */}
+                {me.membership?.manageable ? (
                   <Button
                     variant="secondary"
                     fullWidth
-                    onPress={() =>
-                      Linking.openURL('https://billing.stripe.com/p/login/hackerdojo').catch(
-                        () => undefined,
-                      )
-                    }
+                    loading={billingPortal.isPending}
+                    onPress={() => billingPortal.mutate()}
+                    accessibilityHint="Opens Stripe to change your plan, card or cancel"
                   >
                     Manage billing
                   </Button>
@@ -233,9 +370,7 @@ export default function SettingsScreen() {
                 <Button
                   variant="secondary"
                   fullWidth
-                  onPress={() =>
-                    Linking.openURL('https://hackerdojo.org/privacy').catch(() => undefined)
-                  }
+                  onPress={() => Linking.openURL(dojo.urls.privacy).catch(() => undefined)}
                 >
                   Privacy policy
                 </Button>

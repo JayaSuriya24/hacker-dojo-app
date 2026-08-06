@@ -1,12 +1,24 @@
 import { profileRepository, type DirectoryQuery } from '../repositories/profile.repository.js';
 import { contentRepository } from '../repositories/content.repository.js';
+import { storageRepository } from '../repositories/storage.repository.js';
 import type { AuthenticatedUser } from '../types/http.js';
+import type { MemberDirectoryRow } from '../types/database.js';
 
 export interface MemberCardView {
   id: string;
   name: string;
   initials: string;
+  /** The storage path, kept for callers that need to address the object. */
   avatarPath: string | null;
+  /**
+   * The resolved public URL, or null when there is no avatar.
+   *
+   * The client used to be handed `avatarPath` under the name `imageUrl` and
+   * pass it straight to `expo-image`, which failed silently — and because the
+   * value was truthy, the initials fallback never rendered either. Resolving it
+   * here means the app never constructs a storage URL itself.
+   */
+  avatarUrl: string | null;
   company: string | null;
   bio: string | null;
   currentProject: string | null;
@@ -18,47 +30,68 @@ export interface MemberCardView {
   skillLine: string;
 }
 
+function toMemberCard(row: MemberDirectoryRow): MemberCardView {
+  return {
+    id: row.id,
+    name: row.full_name,
+    initials: row.initials,
+    avatarPath: row.avatar_path,
+    avatarUrl: storageRepository.publicAvatarUrl(row.avatar_path),
+    company: row.company,
+    bio: row.bio,
+    currentProject: row.current_project,
+    skills: row.skills,
+    memberSince: row.member_since,
+    zoneName: row.zone_name,
+    isHere: row.is_here,
+    skillLine: [...row.skills, row.company].filter(Boolean).join(' · '),
+  };
+}
+
+export interface StartupView {
+  id: string;
+  name: string;
+  mark: string;
+  tagline: string;
+  stage: string;
+  foundedYear: string;
+  hiring: boolean;
+  website: string | null;
+}
+
 export const communityService = {
   async directory(user: AuthenticatedUser, query: DirectoryQuery): Promise<MemberCardView[]> {
     const rows = await profileRepository.directory(user.accessToken, query);
 
-    return rows.map((row) => ({
-      id: row.id,
-      name: row.full_name,
-      initials: row.initials,
-      avatarPath: row.avatar_path,
-      company: row.company,
-      bio: row.bio,
-      currentProject: row.current_project,
-      skills: row.skills,
-      memberSince: row.member_since,
-      zoneName: row.zone_name,
-      isHere: row.is_here,
-      skillLine: [...row.skills, row.company].filter(Boolean).join(' · '),
-    }));
+    return rows.map(toMemberCard);
   },
 
   async member(user: AuthenticatedUser, id: string): Promise<MemberCardView> {
     const row = await profileRepository.directoryEntry(user.accessToken, id);
 
-    return {
-      id: row.id,
-      name: row.full_name,
-      initials: row.initials,
-      avatarPath: row.avatar_path,
-      company: row.company,
-      bio: row.bio,
-      currentProject: row.current_project,
-      skills: row.skills,
-      memberSince: row.member_since,
-      zoneName: row.zone_name,
-      isHere: row.is_here,
-      skillLine: [...row.skills, row.company].filter(Boolean).join(' · '),
-    };
+    return toMemberCard(row);
   },
 
-  async startups() {
-    return contentRepository.startups();
+  /**
+   * Startups founded at the Dojo.
+   *
+   * Mapped rather than returned raw: this was the last endpoint handing the
+   * client a database row, so `founded_year` was the one snake_case field in an
+   * otherwise camelCase domain type.
+   */
+  async startups(): Promise<StartupView[]> {
+    const rows = await contentRepository.startups();
+
+    return rows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      mark: row.mark,
+      tagline: row.tagline,
+      stage: row.stage,
+      foundedYear: row.founded_year,
+      hiring: row.hiring,
+      website: row.website,
+    }));
   },
 
   /**

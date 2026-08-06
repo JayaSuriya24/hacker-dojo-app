@@ -78,7 +78,7 @@ export default function BookScreen() {
       disabled={resource.status === 'maintenance'}
       accessibilityRole="button"
       accessibilityLabel={`${resource.name}. ${STATUS_LABEL[resource.status]}.${
-        resource.requires_cert ? ' Certification required.' : ''
+        resource.requiresCert ? ' Certification required.' : ''
       }`}
       accessibilityHint={
         resource.status === 'maintenance' ? 'Unavailable' : 'Opens the booking sheet'
@@ -109,14 +109,14 @@ export default function BookScreen() {
           ) : null}
           <Chip
             label={
-              new Date(resource.free_from).getTime() <= Date.now()
+              new Date(resource.freeFrom).getTime() <= Date.now()
                 ? 'Free now'
-                : `Free ${formatRelative(resource.free_from)}`
+                : `Free ${formatRelative(resource.freeFrom)}`
             }
             readOnly
             tone="neutral"
           />
-          {resource.requires_cert ? (
+          {resource.requiresCert ? (
             <Chip label="Certification required" readOnly tone="warn" />
           ) : null}
         </XStack>

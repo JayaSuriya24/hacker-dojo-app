@@ -87,7 +87,7 @@ export default function TourSheet() {
       title="Take a tour"
       footer={
         <Button
-          variant="solid"
+          variant="primary"
           size="lg"
           fullWidth
           loading={bookTour.isPending}

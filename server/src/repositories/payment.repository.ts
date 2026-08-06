@@ -1,6 +1,12 @@
 import { adminClient } from '../config/supabase.js';
 import { unwrap, unwrapMaybe } from '../utils/postgrest.js';
-import type { BillingPeriod, MembershipRow, PaymentRow, PaymentStatus } from '../types/database.js';
+import type {
+  BillingPeriod,
+  MembershipRow,
+  MembershipStatus,
+  PaymentRow,
+  PaymentStatus,
+} from '../types/database.js';
 
 export interface CreatePaymentInput {
   profileId: string | null;
@@ -10,6 +16,9 @@ export interface CreatePaymentInput {
   stripeCustomerId?: string | undefined;
   metadata?: Record<string, unknown> | undefined;
 }
+
+/** The outcome of reserving a webhook event id. */
+export type WebhookClaim = 'claimed' | 'already_processed';
 
 /**
  * Money.
@@ -58,6 +67,37 @@ export const paymentRepository = {
     if (error) throw new Error(error.message);
   },
 
+  /**
+   * Record the subscription a membership payment belongs to.
+   *
+   * The subscription id goes into `metadata` rather than a new column: the
+   * authoritative copy lives on `memberships.stripe_subscription_id`, and this
+   * is only so a replayed checkout can report the same subscription back to the
+   * client without another Stripe round trip.
+   */
+  async attachSubscription(
+    id: string,
+    input: { subscriptionId: string; paymentIntentId: string | null },
+  ): Promise<void> {
+    const existing = unwrap(
+      await adminClient.from('payments').select('metadata').eq('id', id).single<{
+        metadata: Record<string, unknown>;
+      }>(),
+      'Could not read that payment back.',
+    );
+
+    const { error } = await adminClient
+      .from('payments')
+      .update({
+        status: 'processing',
+        metadata: { ...existing.metadata, subscriptionId: input.subscriptionId },
+        ...(input.paymentIntentId ? { stripe_payment_intent_id: input.paymentIntentId } : {}),
+      })
+      .eq('id', id);
+
+    if (error) throw new Error(error.message);
+  },
+
   async markStatus(paymentIntentId: string, status: PaymentStatus): Promise<PaymentRow | null> {
     return unwrapMaybe(
       await adminClient
@@ -89,61 +129,159 @@ export const paymentRepository = {
   },
 
   /**
-   * Webhook replay guard. Stripe redelivers on any non-2xx and occasionally on
-   * a 2xx; inserting the event id first makes a second delivery a cheap
-   * unique-violation instead of a second membership activation.
+   * Reserve a webhook event id.
    *
-   * @returns true when this is the first time we have seen the event.
+   * Stripe redelivers on any non-2xx and occasionally on a 2xx, so the id is
+   * inserted before the work starts. What changed is the second half: a row
+   * whose `processed_at` is still null was claimed but never finished, and a
+   * redelivery of it must be processed rather than dropped. Only a row that
+   * reached `markWebhookProcessed` reports `already_processed`.
+   *
+   * The `attempts` counter is bumped on every claim so a poison event is
+   * visible in the table rather than only in the logs.
    */
-  async claimWebhookEvent(id: string, type: string): Promise<boolean> {
+  async claimWebhookEvent(id: string, type: string): Promise<WebhookClaim> {
     const { error } = await adminClient.from('stripe_webhook_events').insert({ id, type });
-    if (!error) return true;
-    if (error.code === '23505') return false;
-    throw new Error(error.message);
+
+    if (!error) return 'claimed';
+    if (error.code !== '23505') throw new Error(error.message);
+
+    const existing = unwrapMaybe(
+      await adminClient
+        .from('stripe_webhook_events')
+        .select('processed_at, attempts')
+        .eq('id', id)
+        .maybeSingle<{ processed_at: string | null; attempts: number }>(),
+      'Could not check that webhook event.',
+    );
+
+    if (existing?.processed_at) return 'already_processed';
+
+    // Claimed but unfinished — a previous attempt threw. Take it again.
+    const { error: bumpError } = await adminClient
+      .from('stripe_webhook_events')
+      .update({ attempts: (existing?.attempts ?? 0) + 1 })
+      .eq('id', id);
+
+    if (bumpError) throw new Error(bumpError.message);
+    return 'claimed';
   },
 
-  async activateMembership(input: {
+  async markWebhookProcessed(id: string): Promise<void> {
+    const { error } = await adminClient
+      .from('stripe_webhook_events')
+      .update({ processed_at: new Date().toISOString(), last_error: null })
+      .eq('id', id);
+
+    if (error) throw new Error(error.message);
+  },
+
+  /**
+   * Record why an event failed, leaving `processed_at` null so Stripe's next
+   * delivery is treated as fresh work.
+   */
+  async markWebhookFailed(id: string, message: string): Promise<void> {
+    const { error } = await adminClient
+      .from('stripe_webhook_events')
+      .update({ last_error: message.slice(0, 500) })
+      .eq('id', id);
+
+    // A failure to record a failure must not mask the original error.
+    if (error) throw new Error(error.message);
+  },
+
+  /**
+   * Upsert a membership from a Stripe subscription.
+   *
+   * Keyed on `stripe_subscription_id`, which is unique, so redelivered and
+   * out-of-order webhooks converge rather than stacking rows. The prior
+   * membership is retired first because `memberships_one_active_per_profile`
+   * permits only one live row per person — an upgrade has to close the old one.
+   */
+  async upsertMembershipFromSubscription(input: {
     profileId: string;
     planId: string;
     period: BillingPeriod;
+    status: MembershipStatus;
     stripeCustomerId: string | null;
-    stripeSubscriptionId: string | null;
+    stripeSubscriptionId: string;
     currentPeriodEnd: string | null;
+    cancelAtPeriodEnd: boolean;
   }): Promise<MembershipRow> {
-    // Retire any prior membership first: the exclusion constraint permits only
-    // one live row per profile, so an upgrade must close the old one.
-    await adminClient
-      .from('memberships')
-      .update({ status: 'canceled' })
-      .eq('profile_id', input.profileId)
-      .in('status', ['active', 'trialing', 'past_due']);
-
-    const membership = unwrap(
+    const existing = unwrapMaybe(
       await adminClient
         .from('memberships')
-        .insert({
-          profile_id: input.profileId,
-          plan_id: input.planId,
-          status: 'active',
-          period: input.period,
-          stripe_customer_id: input.stripeCustomerId,
-          stripe_subscription_id: input.stripeSubscriptionId,
-          current_period_end: input.currentPeriodEnd,
-        })
         .select('*')
-        .single<MembershipRow>(),
+        .eq('stripe_subscription_id', input.stripeSubscriptionId)
+        .maybeSingle<MembershipRow>(),
+      'Could not load that membership.',
+    );
+
+    const patch = {
+      profile_id: input.profileId,
+      plan_id: input.planId,
+      status: input.status,
+      period: input.period,
+      stripe_customer_id: input.stripeCustomerId,
+      stripe_subscription_id: input.stripeSubscriptionId,
+      current_period_end: input.currentPeriodEnd,
+      cancel_at_period_end: input.cancelAtPeriodEnd,
+    };
+
+    if (existing) {
+      const updated = unwrap(
+        await adminClient
+          .from('memberships')
+          .update(patch)
+          .eq('id', existing.id)
+          .select('*')
+          .single<MembershipRow>(),
+        'Could not update that membership.',
+      );
+      await this.syncRoleForMembership(input.profileId, input.status);
+      return updated;
+    }
+
+    // Only retire the previous membership when this one is going to be live;
+    // a `canceled` subscription arriving first must not strip a member of an
+    // active plan they still hold.
+    if (input.status === 'active' || input.status === 'trialing') {
+      await adminClient
+        .from('memberships')
+        .update({ status: 'canceled' })
+        .eq('profile_id', input.profileId)
+        .neq('stripe_subscription_id', input.stripeSubscriptionId)
+        .in('status', ['active', 'trialing', 'past_due']);
+    }
+
+    const created = unwrap(
+      await adminClient.from('memberships').insert(patch).select('*').single<MembershipRow>(),
       'Could not activate that membership.',
     );
 
-    // A paying member is a member: promote from 'guest' so the member-only RLS
-    // policies start applying. Existing staff/admin roles are left alone.
-    await adminClient
+    await this.syncRoleForMembership(input.profileId, input.status);
+    return created;
+  },
+
+  /**
+   * Promote a paying member out of `guest`.
+   *
+   * Only ever moves `guest` → `member`: staff and admin roles are assigned by a
+   * human and must survive a billing event. Demotion on cancellation is
+   * deliberately not done here — `is_active_member()` reads the membership, so
+   * access lapses on its own, and stripping the role would also drop a former
+   * member's own historical rows out from under them.
+   */
+  async syncRoleForMembership(profileId: string, status: MembershipStatus): Promise<void> {
+    if (status !== 'active' && status !== 'trialing') return;
+
+    const { error } = await adminClient
       .from('profiles')
       .update({ role: 'member' })
-      .eq('id', input.profileId)
+      .eq('id', profileId)
       .eq('role', 'guest');
 
-    return membership;
+    if (error) throw new Error(error.message);
   },
 
   async updateMembershipBySubscription(
@@ -156,5 +294,40 @@ export const paymentRepository = {
       .eq('stripe_subscription_id', subscriptionId);
 
     if (error) throw new Error(error.message);
+  },
+
+  /**
+   * Which profile a Stripe customer belongs to.
+   *
+   * Needed for subscriptions created outside this API — a steward comping a
+   * membership from the Stripe dashboard produces an event with no metadata.
+   */
+  async profileIdForCustomer(customerId: string): Promise<string | null> {
+    const row = unwrapMaybe(
+      await adminClient
+        .from('memberships')
+        .select('profile_id')
+        .eq('stripe_customer_id', customerId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle<{ profile_id: string }>(),
+      'Could not resolve that customer.',
+    );
+
+    return row?.profile_id ?? null;
+  },
+
+  /** Which plan a Stripe Price belongs to, for the same reason. */
+  async planIdForPrice(priceId: string): Promise<string | null> {
+    const row = unwrapMaybe(
+      await adminClient
+        .from('plans')
+        .select('id')
+        .or(`stripe_price_monthly.eq.${priceId},stripe_price_annual.eq.${priceId}`)
+        .maybeSingle<{ id: string }>(),
+      'Could not resolve that price.',
+    );
+
+    return row?.id ?? null;
   },
 };

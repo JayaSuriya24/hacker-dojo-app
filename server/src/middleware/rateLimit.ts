@@ -60,3 +60,27 @@ export const mutationLimiter = rateLimit({
   windowMs: 60_000,
   limit: 30,
 });
+
+/**
+ * Uploads. Low ceiling because each one costs a storage round trip and a
+ * multi-megabyte body, and nobody legitimately replaces their portrait twelve
+ * times a minute.
+ */
+export const uploadLimiter = rateLimit({
+  ...shared,
+  windowMs: 60_000,
+  limit: 6,
+});
+
+/**
+ * Actions with a consequence in the physical world — currently the door.
+ *
+ * Deliberately tighter than `mutationLimiter`, and deliberately not the only
+ * guard: this counter lives in one process and resets on deploy, so
+ * `accessService` keeps a second one derived from the audit log itself.
+ */
+export const sensitiveLimiter = rateLimit({
+  ...shared,
+  windowMs: 60_000,
+  limit: 10,
+});

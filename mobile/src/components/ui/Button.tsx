@@ -6,21 +6,29 @@ import { Text } from './Text';
 import { usePalette } from '~/providers/ThemeProvider';
 import { useHaptics } from '~/store/preferences.store';
 import { HIT_SLOP_MIN, radius, space } from '~/theme/tokens';
+import { pressableFocusRing } from '~/theme/focus';
 
 /**
  * The action primitive.
  *
- * Nocturne's rule — "the primary is an accent outline, never a fill" — is why
- * `primary` renders as a 1px accent border on a tinted ground rather than a
- * solid block. `solid` exists for the two places the design does flood: the
- * auth submit and the "Enter the Dojo" confirmation.
+ * Nocturne's rule is unambiguous — "the primary is an accent outline, never a
+ * fill", and "do not flood large areas with the accent" — so `primary` renders
+ * as a 1px accent border on transparent and is what every call site should
+ * reach for.
+ *
+ * `solid` had drifted into seven surfaces, most of them full-width at `lg`,
+ * which is exactly the flood the system prohibits. It is now spelled
+ * `commit` and gated: the variant is reserved for the single irreversible
+ * confirmation at the end of a flow — paying, reserving, unlocking a door — and
+ * the type name says so, so choosing it is deliberate rather than habitual.
  *
  * Accessibility is built in rather than left to call sites: a minimum 48pt
- * target (satisfies both HIG's 44 and Material's 48), `accessibilityRole` and
- * a busy/disabled state that screen readers announce.
+ * target (satisfies both HIG's 44 and Material's 48), `accessibilityRole`, a
+ * busy/disabled state that screen readers announce, and the system's own
+ * `:focus-visible` ring.
  */
 
-export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'solid' | 'destructive';
+export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'commit' | 'destructive';
 export type ButtonSize = 'sm' | 'md' | 'lg';
 
 export interface ButtonProps extends Omit<PressableProps, 'children' | 'style'> {
@@ -81,7 +89,11 @@ export const Button = forwardRef<View, ButtonProps>(function Button(
       label: palette.textMuted,
       pressed: palette.surfaceAlt,
     },
-    solid: {
+    /**
+     * The one filled variant. Kept to the end-of-flow commit so the accent
+     * still reads as an accent everywhere else on the screen.
+     */
+    commit: {
       background: palette.accent,
       border: palette.accent,
       label: palette.onAccent,
@@ -119,14 +131,14 @@ export const Button = forwardRef<View, ButtonProps>(function Button(
       // Announces "dimmed" / "disabled" and the busy state to VoiceOver and
       // TalkBack rather than leaving a visually-greyed control unexplained.
       accessibilityState={{ disabled: isDisabled, busy: loading }}
-      style={({ pressed }) => [
+      style={(state) => [
         {
           minHeight: metrics.height,
           paddingHorizontal: metrics.paddingHorizontal,
           borderRadius: radius.md,
           borderWidth: variant === 'ghost' ? 0 : 1,
           borderColor: styles.border,
-          backgroundColor: pressed ? styles.pressed : styles.background,
+          backgroundColor: state.pressed ? styles.pressed : styles.background,
           alignItems: 'center',
           justifyContent: 'center',
           flexDirection: 'row',
@@ -134,6 +146,9 @@ export const Button = forwardRef<View, ButtonProps>(function Button(
           opacity: isDisabled ? 0.45 : 1,
           ...(fullWidth ? { alignSelf: 'stretch' } : {}),
         },
+        // Nocturne: "never leave the default blue focus ring." Keyboard focus
+        // only — the flag is false for touch, so a tap never draws it.
+        pressableFocusRing(state, palette),
       ]}
       {...rest}
     >

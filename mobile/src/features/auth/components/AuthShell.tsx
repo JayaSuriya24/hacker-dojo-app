@@ -5,6 +5,7 @@ import { LinearGradient } from 'tamagui/linear-gradient';
 import { YStack } from 'tamagui';
 import Svg, { Path } from 'react-native-svg';
 import { Text } from '~/components/ui';
+import { usePalette } from '~/providers/ThemeProvider';
 import { brand, radius, space } from '~/theme/tokens';
 import { dojo } from '~/constants/config';
 
@@ -17,8 +18,13 @@ import { dojo } from '~/constants/config';
  * Android resizes the window itself and `height` is the correct mode.
  */
 
-/** The Hacker Dojo torii, drawn rather than shipped as an asset so it inherits colour. */
-export function ToriiMark({ size = 24, color = '#ffffff' }: { size?: number; color?: string }) {
+/**
+ * The Hacker Dojo torii, drawn rather than shipped as an asset so it inherits
+ * colour. `color` is required rather than defaulted to a hex — the mark sits on
+ * the accent in one place and on the ground in another, and a baked-in white
+ * was wrong in the second.
+ */
+export function ToriiMark({ size = 24, color }: { size?: number; color: string }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
       <Path
@@ -33,6 +39,7 @@ export function ToriiMark({ size = 24, color = '#ffffff' }: { size?: number; col
 
 export function AuthShell({ heading, children }: { heading: string; children: ReactNode }) {
   const insets = useSafeAreaInsets();
+  const palette = usePalette();
 
   return (
     <KeyboardAvoidingView
@@ -66,7 +73,7 @@ export function AuthShell({ heading, children }: { heading: string; children: Re
             <Svg width={441} height={240} viewBox="0 0 441 240" fill="none">
               <Path
                 d="M0 0h441M36 36h369M86 36v240M355 36v240M86 80h269"
-                stroke="#ffffff"
+                stroke={palette.onAccent}
                 strokeWidth={11}
                 strokeLinecap="round"
               />

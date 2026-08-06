@@ -233,7 +233,7 @@ export default function CommunityScreen() {
                 {item.tagline}
               </Text>
               <Text variant="caption" tone="subtle">
-                {item.stage} · Founded at the Dojo {item.founded_year}
+                {item.stage} · Founded at the Dojo {item.foundedYear}
               </Text>
             </YStack>
           </Card>
@@ -287,7 +287,7 @@ export default function CommunityScreen() {
             <Avatar
               name={item.name}
               initials={item.initials}
-              imageUrl={item.avatarPath}
+              imageUrl={item.avatarUrl}
               present={item.isHere}
               seed={item.id}
             />

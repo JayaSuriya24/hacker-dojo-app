@@ -146,3 +146,123 @@ export const bookTourSchema = z
     guestEmail: z.email().optional(),
   })
   .strict();
+
+// ---------------------------------------------------------------------------
+// Door access
+// ---------------------------------------------------------------------------
+
+export const unlockDoorSchema = z
+  .object({
+    // A short free-text hint recorded in the audit trail — "iPhone 15, Ana's".
+    // Bounded and stripped so a log row cannot be used to smuggle markup into
+    // the admin console that reads it back.
+    deviceHint: safeText(120).optional(),
+  })
+  .strict();
+
+// ---------------------------------------------------------------------------
+// Uploads
+//
+// `content` is base64 rather than multipart — see the note in
+// `document.controller.ts`. The length bound is on the ENCODED string, which is
+// 4/3 of the decoded size; the service re-checks the decoded byte length
+// against the bucket's own limit, so this only exists to reject something
+// obviously oversized before it is decoded into memory.
+// ---------------------------------------------------------------------------
+
+const base64Content = z
+  .string()
+  .min(16, 'That file appears to be empty.')
+  .max(28_000_000, 'That file is too large to upload from the app.');
+
+export const uploadAvatarSchema = z
+  .object({
+    fileName: z.string().trim().min(1).max(120),
+    mimeType: z.enum(['image/jpeg', 'image/png', 'image/webp']),
+    content: base64Content,
+  })
+  .strict();
+
+export const uploadDocumentSchema = z
+  .object({
+    kind: z.enum(['student_id', 'veteran_proof', 'certification', 'other']),
+    fileName: z.string().trim().min(1).max(120),
+    mimeType: z.enum(['application/pdf', 'image/jpeg', 'image/png']),
+    content: base64Content,
+  })
+  .strict();
+
+export const reviewDocumentSchema = z
+  .object({
+    status: z.enum(['approved', 'rejected']),
+    reviewNote: safeText(500).optional(),
+  })
+  .strict();
+
+// ---------------------------------------------------------------------------
+// Sessions — checking in to the floor
+// ---------------------------------------------------------------------------
+
+export const checkInSchema = z
+  .object({
+    // Optional: a member can be on the floor without holding a specific booth.
+    resourceId: z.uuid().optional(),
+  })
+  .strict();
+
+// ---------------------------------------------------------------------------
+// Staff
+// ---------------------------------------------------------------------------
+
+export const staffQueueQuery = z.object({
+  status: z.string().trim().max(40).optional(),
+  kind: z.enum(['tour', 'event_request', 'program_application', 'document']).optional(),
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+});
+
+export const tourStatusSchema = z
+  .object({ status: z.enum(['requested', 'confirmed', 'attended', 'cancelled']) })
+  .strict();
+
+export const applicationStatusSchema = z
+  .object({
+    status: z.enum(['submitted', 'in_review', 'accepted', 'rejected', 'withdrawn']),
+  })
+  .strict();
+
+export const grantCertificationSchema = z
+  .object({
+    profileId: z.uuid(),
+    resourceId: z.uuid(),
+    expiresAt: isoDateTime.optional(),
+  })
+  .strict();
+
+export const upsertContentSchema = z
+  .object({
+    slot: z
+      .string()
+      .trim()
+      .regex(/^[a-z][a-z0-9_]{1,39}$/, 'Slots are lowercase identifiers.'),
+    key: z
+      .string()
+      .trim()
+      .regex(/^[a-z][a-z0-9_]{1,39}$/, 'Keys are lowercase identifiers.'),
+    label: safeText(120).pipe(z.string().min(1, 'Give this block a label.')),
+    value: safeText(400).optional(),
+    sortOrder: z.coerce.number().int().min(0).max(999).optional(),
+    active: z.boolean().optional(),
+  })
+  .strict();
+
+export const upsertSettingSchema = z
+  .object({
+    key: z
+      .string()
+      .trim()
+      .regex(/^[a-z][a-z0-9_]{1,39}$/, 'Setting keys are lowercase identifiers.'),
+    value: safeText(400).pipe(z.string().min(1, 'Give this setting a value.')),
+    description: safeText(200).optional(),
+    membersOnly: z.boolean().optional(),
+  })
+  .strict();

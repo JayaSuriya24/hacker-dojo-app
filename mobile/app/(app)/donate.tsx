@@ -66,7 +66,7 @@ export default function DonateSheet() {
       title="Support the Dojo"
       footer={
         <Button
-          variant="solid"
+          variant="commit"
           size="lg"
           fullWidth
           loading={donation.isPending}

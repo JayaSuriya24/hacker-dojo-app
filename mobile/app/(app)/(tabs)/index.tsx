@@ -1,11 +1,12 @@
 import { useCallback, useState } from 'react';
-import { Pressable, ScrollView, View } from 'react-native';
+import { Pressable, ScrollView } from 'react-native';
 import { router } from 'expo-router';
 import * as Clipboard from 'expo-clipboard';
 import { XStack, YStack } from 'tamagui';
 import {
   Button,
   Card,
+  Divider,
   ListSkeleton,
   ProgressRing,
   Screen,
@@ -14,7 +15,7 @@ import {
   Text,
 } from '~/components/ui';
 import { useMe } from '~/features/profile/hooks/useProfile';
-import { useOccupancy } from '~/features/community/hooks/useCommunity';
+import { useOccupancy, useSiteSettings } from '~/features/community/hooks/useCommunity';
 import { useEvents } from '~/features/events/hooks/useEvents';
 import {
   useEndSession,
@@ -24,10 +25,9 @@ import {
 } from '~/features/booking/hooks/useBooking';
 import { DigitalKey } from '~/features/home/components/DigitalKey';
 import { LiveSessionCard } from '~/features/home/components/LiveSessionCard';
-import { usePalette } from '~/providers/ThemeProvider';
 import { dojo } from '~/constants/config';
 import { firstNameOf, formatTime, greetingFor } from '~/utils/format';
-import { radius, space } from '~/theme/tokens';
+import { space } from '~/theme/tokens';
 
 /**
  * Home.
@@ -40,9 +40,9 @@ import { radius, space } from '~/theme/tokens';
  * rather than a screen with holes in it.
  */
 export default function HomeScreen() {
-  const palette = usePalette();
   const { data: me } = useMe();
   const occupancy = useOccupancy();
+  const settings = useSiteSettings();
   const todayEvents = useEvents({ today: true });
   const rooms = useResources('room');
   const liveSession = useLiveSession();
@@ -61,13 +61,25 @@ export default function HomeScreen() {
     void occupancy.refetch();
     void todayEvents.refetch();
     void liveSession.refetch();
-  }, [occupancy, todayEvents, liveSession]);
+    void settings.refetch();
+  }, [occupancy, todayEvents, liveSession, settings]);
 
+  /**
+   * Copy the Wi-Fi password.
+   *
+   * The SSID and password used to be string literals in this file, which put
+   * the password in every installed copy of the app and made rotating it an App
+   * Store release. They are members-only rows now, so a guest simply has no
+   * password to copy and the card says so.
+   */
   const copyWifi = useCallback(async () => {
-    await Clipboard.setStringAsync('make-things-2009');
+    const password = settings.data?.wifiPassword;
+    if (!password) return;
+
+    await Clipboard.setStringAsync(password);
     setWifiCopied(true);
     setTimeout(() => setWifiCopied(false), 2000);
-  }, []);
+  }, [settings.data?.wifiPassword]);
 
   const freeRooms = (rooms.data ?? []).filter((room) => room.status === 'available').length;
   const totalRooms = rooms.data?.length ?? 0;
@@ -122,7 +134,7 @@ export default function HomeScreen() {
       {/* ---- Digital key, or the guest gate ------------------------------ */}
       <YStack marginTop={space[4]}>
         {isMember ? (
-          <DigitalKey keyId="A7-2291-MV" />
+          <DigitalKey />
         ) : (
           <Card tone="dashed" alignItems="center" gap={space[3]}>
             <Text variant="title" center>
@@ -160,17 +172,29 @@ export default function HomeScreen() {
           <YStack flex={1} minWidth="45%">
             <Pressable
               onPress={() => void copyWifi()}
+              disabled={!settings.data?.wifiPassword}
               accessibilityRole="button"
               accessibilityLabel="Copy the Wi-Fi password"
-              accessibilityHint={wifiCopied ? 'Copied to your clipboard' : undefined}
+              accessibilityState={{ disabled: !settings.data?.wifiPassword }}
+              accessibilityHint={
+                settings.data?.wifiPassword
+                  ? wifiCopied
+                    ? 'Copied to your clipboard'
+                    : 'Copies the password to your clipboard'
+                  : 'Wi-Fi access is a member benefit'
+              }
             >
               <Card padded="tight" gap={space[1]}>
                 <Text variant="small">Wi-Fi</Text>
                 <Text variant="mono" tone="subtle">
-                  dojo-5g
+                  {settings.data?.wifiSsid ?? '—'}
                 </Text>
                 <Text variant="caption" tone="accent">
-                  {wifiCopied ? 'Copied' : 'Tap to copy password'}
+                  {!settings.data?.wifiPassword
+                    ? 'Members only'
+                    : wifiCopied
+                      ? 'Copied'
+                      : 'Tap to copy password'}
                 </Text>
               </Card>
             </Pressable>
@@ -281,14 +305,7 @@ export default function HomeScreen() {
           <Text variant="small" tone="subtle">
             {dojo.addressLine2}
           </Text>
-          <View
-            style={{
-              height: 1,
-              backgroundColor: palette.border,
-              marginVertical: space[3],
-              borderRadius: radius.sm,
-            }}
-          />
+          <Divider spacing={space[3]} />
           <Text variant="small" tone="muted">
             {dojo.transit}
           </Text>

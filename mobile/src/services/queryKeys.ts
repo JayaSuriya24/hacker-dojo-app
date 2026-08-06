@@ -45,5 +45,26 @@ export const queryKeys = {
     programs: () => ['dojo', 'programs'] as const,
     about: () => ['dojo', 'about'] as const,
     occupancy: () => ['dojo', 'occupancy'] as const,
+    /** Wi-Fi and lab status. Members see more of it than guests. */
+    settings: () => ['dojo', 'settings'] as const,
+  },
+
+  access: {
+    all: () => ['access'] as const,
+    key: () => ['access', 'key'] as const,
+    history: () => ['access', 'history'] as const,
+  },
+
+  uploads: {
+    documents: () => ['uploads', 'documents'] as const,
+    document: (id: string) => ['uploads', 'document', id] as const,
+  },
+
+  staff: {
+    all: () => ['staff'] as const,
+    dashboard: () => ['staff', 'dashboard'] as const,
+    queue: (filters: { kind?: string; status?: string }) => ['staff', 'queue', filters] as const,
+    documents: () => ['staff', 'documents'] as const,
+    content: () => ['staff', 'content'] as const,
   },
 } as const;

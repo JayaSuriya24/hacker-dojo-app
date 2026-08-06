@@ -1,4 +1,5 @@
 import { profileRepository, type ProfilePatch } from '../repositories/profile.repository.js';
+import { storageRepository } from '../repositories/storage.repository.js';
 import { AppError } from '../utils/errors.js';
 import type { AuthenticatedUser } from '../types/http.js';
 import type { MemberRole } from '../types/database.js';
@@ -9,6 +10,8 @@ export interface MeView {
   name: string;
   initials: string;
   avatarPath: string | null;
+  /** Resolved public URL, so the client never builds a storage URL itself. */
+  avatarUrl: string | null;
   role: MemberRole;
   bio: string | null;
   company: string | null;
@@ -25,6 +28,8 @@ export interface MeView {
     period: string;
     currentPeriodEnd: string | null;
     cancelAtPeriodEnd: boolean;
+    /** True once the plan is a real Stripe subscription the portal can manage. */
+    manageable: boolean;
   } | null;
 }
 
@@ -49,6 +54,7 @@ export const profileService = {
       name: profile.full_name,
       initials: profile.initials,
       avatarPath: profile.avatar_path,
+      avatarUrl: storageRepository.publicAvatarUrl(profile.avatar_path),
       role: profile.role,
       bio: profile.bio,
       company: profile.company,
@@ -65,6 +71,7 @@ export const profileService = {
             period: membership.period,
             currentPeriodEnd: membership.current_period_end,
             cancelAtPeriodEnd: membership.cancel_at_period_end,
+            manageable: membership.stripe_subscription_id !== null,
           }
         : null,
     };

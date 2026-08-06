@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { EventCategory } from '~/types/domain';
+import type { BillingPeriodChoice } from '~/features/payments/billingPeriod';
 
 /**
  * Local UI state only.
@@ -18,6 +19,7 @@ import type { EventCategory } from '~/types/domain';
 export type AppearanceMode = 'system' | 'light' | 'dark';
 export type CommunityTab = 'here' | 'members' | 'startups';
 export type BookTab = 'hardware' | 'rooms' | 'mine';
+export type StaffFilter = 'all' | 'tour' | 'event_request' | 'program_application' | 'document';
 
 interface PreferencesState {
   appearance: AppearanceMode;
@@ -28,7 +30,8 @@ interface PreferencesState {
   communityTab: CommunityTab;
   bookTab: BookTab;
   directorySkills: string[];
-  billingPeriod: 'mo' | 'yr';
+  billingPeriod: BillingPeriodChoice;
+  staffFilter: StaffFilter;
   hapticsEnabled: boolean;
 
   setAppearance: (mode: AppearanceMode) => void;
@@ -38,7 +41,8 @@ interface PreferencesState {
   setBookTab: (tab: BookTab) => void;
   toggleDirectorySkill: (skill: string) => void;
   clearDirectorySkills: () => void;
-  setBillingPeriod: (period: 'mo' | 'yr') => void;
+  setBillingPeriod: (period: BillingPeriodChoice) => void;
+  setStaffFilter: (filter: StaffFilter) => void;
   setHapticsEnabled: (enabled: boolean) => void;
 }
 
@@ -52,6 +56,7 @@ export const usePreferencesStore = create<PreferencesState>()(
       bookTab: 'hardware',
       directorySkills: [],
       billingPeriod: 'mo',
+      staffFilter: 'all',
       hapticsEnabled: true,
 
       setAppearance: (appearance) => set({ appearance }),
@@ -69,6 +74,7 @@ export const usePreferencesStore = create<PreferencesState>()(
 
       clearDirectorySkills: () => set({ directorySkills: [] }),
       setBillingPeriod: (billingPeriod) => set({ billingPeriod }),
+      setStaffFilter: (staffFilter) => set({ staffFilter }),
       setHapticsEnabled: (hapticsEnabled) => set({ hapticsEnabled }),
     }),
     {

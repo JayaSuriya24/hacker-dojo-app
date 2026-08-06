@@ -100,6 +100,24 @@ export default function AppLayout() {
         name="settings"
         options={{ presentation: 'card', animation: 'slide_from_right' }}
       />
+
+      {/* Verification uploads — a form, so a sheet like the rest of them. */}
+      <Stack.Screen
+        name="verification"
+        options={{
+          presentation: 'formSheet',
+          sheetGrabberVisible: true,
+          sheetAllowedDetents: [0.85],
+        }}
+      />
+
+      {/*
+        Staff surfaces are pushes rather than sheets: a steward works through a
+        queue and needs the back stack, not a dismiss gesture that loses their
+        place.
+      */}
+      <Stack.Screen name="staff/index" options={{ animation: 'slide_from_right' }} />
+      <Stack.Screen name="staff/documents" options={{ animation: 'slide_from_right' }} />
     </Stack>
   );
 }

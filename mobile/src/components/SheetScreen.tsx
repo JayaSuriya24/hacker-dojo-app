@@ -3,8 +3,8 @@ import { KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { YStack } from 'tamagui';
 import { Text } from '~/components/ui';
-import { usePalette } from '~/providers/ThemeProvider';
-import { space } from '~/theme/tokens';
+import { usePalette, useResolvedScheme } from '~/providers/ThemeProvider';
+import { shadowStyle, space } from '~/theme/tokens';
 
 /**
  * The scaffold shared by every sheet route.
@@ -27,6 +27,7 @@ export function SheetScreen({
 }) {
   const insets = useSafeAreaInsets();
   const palette = usePalette();
+  const scheme = useResolvedScheme();
 
   return (
     <KeyboardAvoidingView
@@ -54,6 +55,12 @@ export function SheetScreen({
         {children}
       </ScrollView>
 
+      {/*
+        The pinned action bar is a floating element over scrolling content, so it
+        takes the system's top elevation step — `--shadow-lg`, which on this
+        ground is a hairline plus ambient darkness rather than a drop shadow
+        doing the separating.
+      */}
       {footer ? (
         <YStack
           paddingHorizontal={space[5]}
@@ -62,6 +69,7 @@ export function SheetScreen({
           borderTopWidth={1}
           borderTopColor="$borderColor"
           backgroundColor="$background"
+          {...shadowStyle(scheme, 'lg')}
         >
           {footer}
         </YStack>

@@ -3,6 +3,7 @@ import { XStack } from 'tamagui';
 import { Text } from './Text';
 import { usePalette } from '~/providers/ThemeProvider';
 import { HIT_SLOP_MIN, radius, space } from '~/theme/tokens';
+import { pressableFocusRing } from '~/theme/focus';
 
 /**
  * The segmented control — the Hardware/Rooms/My bookings and
@@ -54,7 +55,7 @@ export function Segmented<T extends string>({
             accessibilityRole="tab"
             accessibilityLabel={option.label}
             accessibilityState={{ selected }}
-            style={{ flex: 1 }}
+            style={(state) => [{ flex: 1 }, pressableFocusRing(state, palette)]}
           >
             <View
               style={{

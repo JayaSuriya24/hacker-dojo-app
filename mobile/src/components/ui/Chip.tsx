@@ -2,6 +2,7 @@ import { Pressable, View } from 'react-native';
 import { Text } from './Text';
 import { usePalette } from '~/providers/ThemeProvider';
 import { HIT_SLOP_MIN, radius, space } from '~/theme/tokens';
+import { pressableFocusRing } from '~/theme/focus';
 
 /**
  * The pill used for filters (event categories, directory skills) and for
@@ -38,7 +39,10 @@ export function Chip({ label, selected = false, onPress, tone = 'accent', readOn
     minHeight: readOnly ? 26 : HIT_SLOP_MIN,
     paddingHorizontal: space[4],
     paddingVertical: readOnly ? space[1] : 0,
-    borderRadius: radius.pill,
+    // Nocturne's `.tag` is `calc(var(--radius-md) * 0.75)` — a soft rectangle,
+    // not a pill. The pill radius here was reading as a different component
+    // family from the one in the design file.
+    borderRadius: radius.tag,
     borderWidth: 1,
     borderColor: selected ? palette.accent : palette.border,
     backgroundColor: selected ? palette.accentTintStrong : 'transparent',
@@ -72,7 +76,11 @@ export function Chip({ label, selected = false, onPress, tone = 'accent', readOn
       accessibilityRole="button"
       accessibilityLabel={label}
       accessibilityState={{ selected }}
-      style={({ pressed }) => [containerStyle, pressed && { backgroundColor: palette.accentTint }]}
+      style={(state) => [
+        containerStyle,
+        state.pressed && { backgroundColor: palette.accentTint },
+        pressableFocusRing(state, palette),
+      ]}
     >
       {content}
     </Pressable>

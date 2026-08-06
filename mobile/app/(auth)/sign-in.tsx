@@ -201,7 +201,7 @@ export default function SignInScreen() {
         </XStack>
 
         <Button
-          variant="solid"
+          variant="primary"
           size="lg"
           fullWidth
           loading={isSubmitting}

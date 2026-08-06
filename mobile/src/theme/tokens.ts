@@ -84,6 +84,8 @@ export const radius = {
   md: 8,
   lg: 14,
   xl: 22,
+  /** Nocturne's `.tag`: `calc(var(--radius-md) * 0.75)`. */
+  tag: 6,
   pill: 999,
 } as const;
 
@@ -220,68 +222,97 @@ export const darkPalette: Palette = {
 };
 
 /**
- * Elevation. Nocturne: "on a dark ground elevation is an edge plus ambient
- * darkness" — so the dark set leans on the ring and keeps the drop shadow low.
+ * Elevation.
+ *
+ * Nocturne expresses depth as `--shadow-sm: 0 0 0 1px <ring>` and
+ * `--shadow-md: 0 0 0 1px <ring>, 0 6px 18px rgba(0,0,0,.55)` — a hairline plus
+ * ambient darkness, never a soft drop shadow doing the separating on its own.
+ * The `sm` step is therefore a ring and nothing else, which every surface in
+ * this app already draws as a 1px border; only `md` and `lg` add depth beneath
+ * it.
+ *
+ * The colour carries its own alpha so a component can set `shadowOpacity: 1`
+ * and let the theme decide how dark the ambience is — the dark ground needs far
+ * more of it than the light one.
  */
 export const shadows = {
   light: {
-    sm: {
-      shadowColor: neutral[900],
-      shadowOpacity: 0.06,
-      shadowRadius: 6,
-      shadowOffset: { width: 0, height: 2 },
-      elevation: 1,
-    },
-    md: {
-      shadowColor: neutral[900],
-      shadowOpacity: 0.1,
-      shadowRadius: 14,
-      shadowOffset: { width: 0, height: 6 },
-      elevation: 3,
-    },
-    lg: {
-      shadowColor: neutral[900],
-      shadowOpacity: 0.16,
-      shadowRadius: 28,
-      shadowOffset: { width: 0, height: 14 },
-      elevation: 8,
-    },
+    /** The ring. Drawn as a border by `Card`; here for surfaces that cannot. */
+    sm: { color: 'rgba(41,43,49,0.10)', radius: 6, offsetY: 2, elevation: 1 },
+    md: { color: 'rgba(41,43,49,0.14)', radius: 18, offsetY: 6, elevation: 3 },
+    lg: { color: 'rgba(41,43,49,0.20)', radius: 40, offsetY: 16, elevation: 8 },
   },
   dark: {
-    sm: {
-      shadowColor: '#000000',
-      shadowOpacity: 0.4,
-      shadowRadius: 6,
-      shadowOffset: { width: 0, height: 2 },
-      elevation: 1,
-    },
-    md: {
-      shadowColor: '#000000',
-      shadowOpacity: 0.55,
-      shadowRadius: 18,
-      shadowOffset: { width: 0, height: 6 },
-      elevation: 3,
-    },
-    lg: {
-      shadowColor: '#000000',
-      shadowOpacity: 0.65,
-      shadowRadius: 40,
-      shadowOffset: { width: 0, height: 16 },
-      elevation: 8,
-    },
+    sm: { color: 'rgba(0,0,0,0.40)', radius: 6, offsetY: 2, elevation: 1 },
+    md: { color: 'rgba(0,0,0,0.55)', radius: 18, offsetY: 6, elevation: 3 },
+    lg: { color: 'rgba(0,0,0,0.65)', radius: 40, offsetY: 16, elevation: 8 },
   },
 } as const;
 
+export type ShadowStep = keyof (typeof shadows)['light'];
+
 /**
- * Motion. Durations chosen against the design's own transitions (.2s–.3s) and
- * kept short enough that nothing blocks a tap.
+ * A React Native shadow style for one step of the scale.
+ *
+ * `elevation` is Android's own depth model and is set alongside the iOS
+ * properties rather than instead of them — a component styled for one platform
+ * and flat on the other is the usual way this goes wrong.
+ */
+export function shadowStyle(scheme: 'light' | 'dark', step: ShadowStep) {
+  const token = shadows[scheme][step];
+
+  return {
+    shadowColor: token.color,
+    shadowOpacity: 1,
+    shadowRadius: token.radius,
+    shadowOffset: { width: 0, height: token.offsetY },
+    elevation: token.elevation,
+  } as const;
+}
+
+/**
+ * Motion.
+ *
+ * Durations chosen against the design's own transitions (.2s–.3s) and kept
+ * short enough that nothing blocks a tap. Nothing in the app may hardcode a
+ * duration or an easing — every animation reads from here, so retuning the
+ * system's feel is one edit rather than a sweep through fourteen components.
+ *
+ * `easing` is Nocturne's own curve, `cubic-bezier(.32,.72,0,1)`: a fast
+ * departure and a long settle. `Easing.bezier(...motion.curve)` turns it into
+ * the React Native equivalent — see `motionEasing` in `~/theme/motion`.
  */
 export const motion = {
+  /** Press feedback, colour changes, anything the finger is still touching. */
   fast: 160,
+  /** The default. Sheets, cards, list transitions. */
   base: 220,
+  /** Deliberate reveals — the occupancy ring filling, an accordion opening. */
   slow: 300,
+  /** Long-running ambient loops: the skeleton shimmer, the unlock pulse. */
+  ambient: 700,
   /** cubic-bezier(.32,.72,0,1) — the sheet curve from the design. */
-  sheetEasing: [0.32, 0.72, 0, 1] as const,
+  curve: [0.32, 0.72, 0, 1] as const,
+} as const;
+
+/**
+ * Font families, as the names `expo-font` registers them under.
+ *
+ * These are the loaded PostScript-ish keys, not CSS stacks. The previous values
+ * were `'Inter, system-ui, sans-serif'` and `'JetBrainsMono, ui-monospace,
+ * Menlo, monospace'` — comma-separated fallback lists, which are a browser
+ * concept. React Native passes the whole string to the platform font resolver,
+ * finds nothing, and silently falls back to San Francisco or Roboto: the entire
+ * type layer rendered in the wrong face, including the mono columns the design
+ * uses to align reservation references and times.
+ */
+export const fontFamily = {
+  regular: 'Inter_400Regular',
+  medium: 'Inter_500Medium',
+  semibold: 'Inter_600SemiBold',
+  bold: 'Inter_700Bold',
+  mono: 'JetBrainsMono_500Medium',
+  monoSemibold: 'JetBrainsMono_600SemiBold',
 } as const;
 
 /**

@@ -7,6 +7,7 @@ import { router } from 'expo-router';
 import { useAuth } from '~/providers/AuthProvider';
 import { useUpdateNotificationPreferences } from '~/features/profile/hooks/useProfile';
 import { logger } from '~/services/logger';
+import { brand } from '~/theme/tokens';
 
 /**
  * Push and local notifications.
@@ -69,7 +70,9 @@ async function registerChannels(): Promise<void> {
         description: channel.description,
         importance: channel.importance,
         vibrationPattern: [0, 250, 250, 250],
-        lightColor: '#E33230',
+        // Android's notification LED / accent for the channel. From the brand
+        // ramp rather than a literal, same rule as everything else.
+        lightColor: brand[500],
       }),
     ),
   );

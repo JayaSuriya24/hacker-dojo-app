@@ -63,14 +63,51 @@ describe('bookingService.availability', () => {
 
   it('marks a slot unavailable when a confirmed booking overlaps it', async () => {
     vi.mocked(resourceRepository.findById).mockResolvedValue(laser);
+    // 11:00–13:00 in Mountain View on a January day is 19:00–21:00Z (PST, -08).
+    // This assertion previously used the bare UTC instants and passed, which is
+    // precisely how the timezone bug survived: the test encoded it.
     vi.mocked(resourceRepository.busyRanges).mockResolvedValue([
-      { starts_at: '2099-01-01T11:00:00.000Z', ends_at: '2099-01-01T13:00:00.000Z' },
+      { starts_at: '2099-01-01T19:00:00.000Z', ends_at: '2099-01-01T21:00:00.000Z' },
     ]);
 
     const slots = await bookingService.availability(laser.id, '2099-01-01');
     const taken = slots.filter((slot) => !slot.available).map((slot) => slot.label);
 
     expect(taken).toEqual(['11:00', '12:00']);
+  });
+
+  /**
+   * The regression this whole change exists for.
+   *
+   * `opens_at` is a local `time`, and the old implementation walked it with
+   * `setUTCHours` — so the "09:00" a member tapped reserved 09:00Z, which is
+   * 01:00 or 02:00 in Mountain View depending on the season.
+   */
+  it('resolves opening hours against the Dojo wall clock, not UTC', async () => {
+    vi.mocked(resourceRepository.findById).mockResolvedValue(laser);
+    vi.mocked(resourceRepository.busyRanges).mockResolvedValue([]);
+
+    const winter = await bookingService.availability(laser.id, '2099-01-15');
+    const summer = await bookingService.availability(laser.id, '2099-07-15');
+
+    // 09:00 PST is 17:00Z; 09:00 PDT is 16:00Z. The label is 09:00 in both.
+    expect(winter[0]?.label).toBe('09:00');
+    expect(winter[0]?.startsAt).toBe('2099-01-15T17:00:00.000Z');
+
+    expect(summer[0]?.label).toBe('09:00');
+    expect(summer[0]?.startsAt).toBe('2099-07-15T16:00:00.000Z');
+  });
+
+  it('closes the grid on the local closing hour', async () => {
+    vi.mocked(resourceRepository.findById).mockResolvedValue(laser);
+    vi.mocked(resourceRepository.busyRanges).mockResolvedValue([]);
+
+    const slots = await bookingService.availability(laser.id, '2099-07-15');
+    const last = slots.at(-1);
+
+    // Closes at 21:00 local, and slots are an hour, so the last start is 20:00.
+    expect(last?.label).toBe('20:00');
+    expect(last?.startsAt).toBe('2099-07-16T03:00:00.000Z');
   });
 
   it('never offers a slot in the past', async () => {

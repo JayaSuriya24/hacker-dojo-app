@@ -1,10 +1,11 @@
 import { useEffect, useRef } from 'react';
-import { Animated, Easing, View } from 'react-native';
+import { Animated, View } from 'react-native';
 import Svg, { Circle } from 'react-native-svg';
 import { YStack } from 'tamagui';
 import { Text } from './Text';
 import { usePalette } from '~/providers/ThemeProvider';
 import { useReducedMotion } from '~/hooks/useReducedMotion';
+import { timing } from '~/theme/motion';
 
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 
@@ -54,12 +55,10 @@ export function ProgressRing({
 
     Animated.timing(progress, {
       toValue: target,
-      duration: 700,
-      easing: Easing.out(Easing.cubic),
       // strokeDashoffset is not a transform or opacity, so it cannot run on the
       // native driver. The animation is a single short tween on one element,
       // which the JS thread handles without dropping frames.
-      useNativeDriver: false,
+      ...timing('slow', { reducedMotion, useNativeDriver: false }),
     }).start();
   }, [circumference, clamped, progress, reducedMotion]);
 

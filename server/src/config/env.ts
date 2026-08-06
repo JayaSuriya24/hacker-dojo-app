@@ -38,8 +38,57 @@ const EnvSchema = z
     STRIPE_SECRET_KEY: z.string().startsWith('sk_'),
     STRIPE_WEBHOOK_SECRET: z.string().startsWith('whsec_'),
 
+    /**
+     * Where Stripe returns a member after the Billing Portal. A deep link into
+     * the app rather than a web page, so cancelling a plan does not strand
+     * someone in a browser.
+     */
+    BILLING_PORTAL_RETURN_URL: z.url().default('https://app.hackerdojo.org/settings'),
+
+    /**
+     * Expo push access token. Optional: without it the notification service
+     * records deliveries and logs, but sends nothing — which is the correct
+     * behaviour in a local environment rather than a hard startup failure.
+     */
+    EXPO_ACCESS_TOKEN: z.string().min(1).optional(),
+
+    /** How often the API samples live sessions into `occupancy_samples`. */
+    OCCUPANCY_SAMPLE_INTERVAL_MS: z.coerce
+      .number()
+      .int()
+      .min(15_000)
+      .max(3_600_000)
+      .default(60_000),
+
+    /**
+     * Set on exactly one instance in a multi-instance deployment. The scheduler
+     * is not distributed, so every replica running it would multiply the
+     * samples and the digest sends.
+     */
+    RUN_SCHEDULER: z
+      .enum(['true', 'false'])
+      .default('true')
+      .transform((value) => value === 'true'),
+
+    /** Printed on donation receipts. Here rather than in code so it is auditable. */
+    DOJO_EIN: z.string().min(4).default('26-4812213'),
+
     /** Ceiling on a single donation, in cents. Guards against fat fingers and abuse. */
     MAX_DONATION_CENTS: z.coerce.number().int().positive().default(2_000_000),
+
+    /** Ceiling on an uploaded verification document, in bytes. Matches the bucket. */
+    MAX_DOCUMENT_BYTES: z.coerce
+      .number()
+      .int()
+      .positive()
+      .default(20 * 1024 * 1024),
+
+    /** Ceiling on an uploaded avatar, in bytes. Matches the bucket. */
+    MAX_AVATAR_BYTES: z.coerce
+      .number()
+      .int()
+      .positive()
+      .default(2 * 1024 * 1024),
 
     RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(60_000),
     RATE_LIMIT_MAX: z.coerce.number().int().positive().default(120),
@@ -62,6 +111,23 @@ const EnvSchema = z
         code: 'custom',
         path: ['STRIPE_SECRET_KEY'],
         message: 'Refusing to start production with a Stripe test key.',
+      });
+    }
+    // Without a push token the notification service degrades to logging, which
+    // is right locally and wrong in production — a member who enabled booking
+    // reminders would silently never receive one.
+    if (!env.EXPO_ACCESS_TOKEN) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['EXPO_ACCESS_TOKEN'],
+        message: 'EXPO_ACCESS_TOKEN is required in production — push would silently no-op.',
+      });
+    }
+    if (env.BILLING_PORTAL_RETURN_URL.startsWith('http://')) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['BILLING_PORTAL_RETURN_URL'],
+        message: 'The billing portal return URL must be https in production.',
       });
     }
   });

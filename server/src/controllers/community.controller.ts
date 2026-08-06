@@ -47,6 +47,18 @@ export const communityController = {
     res.json({ data: await contentService.about() });
   }),
 
+  /**
+   * Site settings for this caller.
+   *
+   * `private` rather than `public` in the cache header: the members-only rows
+   * (the Wi-Fi password) differ per caller, and a shared cache keyed on the URL
+   * alone would serve one member's response to a signed-out visitor.
+   */
+  settings: asyncHandler(async (req: Request, res: Response) => {
+    res.set('Cache-Control', 'private, max-age=60');
+    res.json({ data: await contentService.settings(req.context.user) });
+  }),
+
   bookTour: asyncHandler(async (req: Request, res: Response) => {
     const tour = await contentService.bookTour(req.context.user, req.body);
     res.status(201).json({ data: tour });

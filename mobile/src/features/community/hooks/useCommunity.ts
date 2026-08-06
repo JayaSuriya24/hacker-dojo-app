@@ -100,3 +100,19 @@ export function useAbout() {
 export function useBookTour() {
   return useMutation({ mutationFn: communityApi.bookTour });
 }
+
+/**
+ * Site settings — Wi-Fi, lab status.
+ *
+ * Not gated on membership in the client: a guest gets the same shape with the
+ * members-only fields null, and the Home card renders "Members only" rather
+ * than disappearing. Which fields come back is decided by the RLS policy on
+ * `site_settings`, not by a branch here.
+ */
+export function useSiteSettings() {
+  return useQuery({
+    queryKey: queryKeys.dojo.settings(),
+    queryFn: communityApi.settings,
+    staleTime: QUERY_STALE_TIME.static,
+  });
+}

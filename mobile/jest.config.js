@@ -10,10 +10,15 @@ module.exports = {
   preset: 'jest-expo',
   setupFilesAfterEnv: ['<rootDir>/jest.setup.js'],
   transformIgnorePatterns: [
-    'node_modules/(?!((jest-)?react-native|@react-native(-community)?)|expo(nent)?|@expo(nent)?/.*|@expo-google-fonts/.*|react-navigation|@react-navigation/.*|@unimodules/.*|unimodules|sentry-expo|native-base|react-native-svg|tamagui|@tamagui/.*|@stripe/stripe-react-native|react-native-reanimated|react-native-worklets)',
+    'node_modules/(?!((jest-)?react-native|@react-native(-community)?)|expo(nent)?|@expo(nent)?/.*|@expo-google-fonts/.*|react-navigation|@react-navigation/.*|@unimodules/.*|unimodules|sentry-expo|native-base|react-native-svg|tamagui|@tamagui/.*|@stripe/stripe-react-native|react-native-reanimated|react-native-worklets|standard-navigation|@legendapp/.*)',
   ],
   moduleNameMapper: {
     '^~/(.*)$': '<rootDir>/src/$1',
+  },
+  // Font assets are binary; importing one under Jest would try to parse a TTF
+  // as JavaScript. The loader hook is exercised through `useAppFonts` instead.
+  transform: {
+    '^.+\\.(ttf|otf|png|jpg|jpeg|webp|svg)$': '<rootDir>/jest.assetTransformer.js',
   },
   collectCoverageFrom: ['src/**/*.{ts,tsx}', '!src/**/*.d.ts', '!src/types/**'],
   testMatch: ['**/__tests__/**/*.test.{ts,tsx}'],

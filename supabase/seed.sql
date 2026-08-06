@@ -19,13 +19,28 @@ on conflict (id) do nothing;
 -- ---------------------------------------------------------------------------
 -- Plans
 -- ---------------------------------------------------------------------------
+--
+-- `stripe_price_*` are the Price ids memberships subscribe to. They are the one
+-- part of this seed that CANNOT be invented: create the Prices in your own
+-- Stripe account and paste the ids here (or update the rows afterwards).
+--
+-- A plan with no Price id is refused at checkout rather than silently falling
+-- back to a one-off charge — that fallback is exactly why memberships used to
+-- never renew.
+--
 insert into public.plans
-  (id, name, description, price_monthly_cents, price_annual_cents, is_addon, is_popular, requires_proof, sort_order)
+  (id, name, description, price_monthly_cents, price_annual_cents,
+   stripe_price_monthly, stripe_price_annual,
+   is_addon, is_popular, requires_proof, sort_order)
 values
-  ('standard', 'Standard', 'Month to month. Full access, 24/7.', 15000, 135000, false, true,  false, 1),
-  ('student',  'Student',  'Current student ID verification required.', 7500, 67500, false, false, true,  2),
-  ('veteran',  'Veteran',  'Service verification (DD-214) required.', 13500, 121500, false, false, true,  3),
-  ('desk',     'Dedicated Desk', 'Add-on to any plan. Your own desk, monitor and locker.', 22500, null, true, false, false, 4)
+  ('standard', 'Standard', 'Month to month. Full access, 24/7.', 15000, 135000,
+   null, null, false, true,  false, 1),
+  ('student',  'Student',  'Current student ID verification required.', 7500, 67500,
+   null, null, false, false, true,  2),
+  ('veteran',  'Veteran',  'Service verification (DD-214) required.', 13500, 121500,
+   null, null, false, false, true,  3),
+  ('desk',     'Dedicated Desk', 'Add-on to any plan. Your own desk, monitor and locker.', 22500, null,
+   null, null, true, false, false, 4)
 on conflict (id) do nothing;
 
 -- ---------------------------------------------------------------------------
@@ -162,3 +177,10 @@ insert into public.faqs (question, answer, sort_order) values
 -- A starting occupancy sample per zone so the Home dial is never empty.
 insert into public.occupancy_samples (zone_id, head_count) values
   ('main', 23), ('lab', 9), ('quiet', 6), ('booths', 4);
+
+-- ---------------------------------------------------------------------------
+-- Occupancy: seed one sample per zone so the Home dial has something to draw
+-- before the API's scheduler has run for the first time. From then on
+-- `sample_occupancy()` appends a real reading every minute.
+-- ---------------------------------------------------------------------------
+select public.sample_occupancy();

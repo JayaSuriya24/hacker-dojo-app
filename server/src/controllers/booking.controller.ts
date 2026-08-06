@@ -45,6 +45,14 @@ export const bookingController = {
     res.json({ data: await bookingService.liveSession(req.context.user) });
   }),
 
+  checkIn: asyncHandler<AuthenticatedRequest>(async (req, res: Response) => {
+    const body = req.body as { resourceId?: string };
+    const session = await bookingService.checkIn(req.context.user, {
+      resourceId: body.resourceId,
+    });
+    res.status(201).json({ data: session });
+  }),
+
   extendSession: asyncHandler<AuthenticatedRequest>(async (req, res: Response) => {
     res.json({ data: await bookingService.extendSession(req.context.user) });
   }),

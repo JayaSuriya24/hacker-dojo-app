@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { ActivityIndicator, Animated, Easing, View } from 'react-native';
+import { ActivityIndicator, Animated, View } from 'react-native';
 import { YStack } from 'tamagui';
 import { Text } from './Text';
 import { Button } from './Button';
@@ -7,6 +7,7 @@ import { usePalette } from '~/providers/ThemeProvider';
 import { isApiError, userMessage } from '~/services/api/errors';
 import { radius, space } from '~/theme/tokens';
 import { useReducedMotion } from '~/hooks/useReducedMotion';
+import { ambientEasing, timing } from '~/theme/motion';
 
 /**
  * Loading, empty and error states.
@@ -39,20 +40,12 @@ export function Skeleton({
       return;
     }
 
+    const pulseStep = timing('ambient', { easing: ambientEasing });
+
     const animation = Animated.loop(
       Animated.sequence([
-        Animated.timing(pulse, {
-          toValue: 1,
-          duration: 700,
-          easing: Easing.inOut(Easing.ease),
-          useNativeDriver: true,
-        }),
-        Animated.timing(pulse, {
-          toValue: 0.5,
-          duration: 700,
-          easing: Easing.inOut(Easing.ease),
-          useNativeDriver: true,
-        }),
+        Animated.timing(pulse, { toValue: 1, ...pulseStep }),
+        Animated.timing(pulse, { toValue: 0.5, ...pulseStep }),
       ]),
     );
 

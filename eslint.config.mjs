@@ -85,8 +85,7 @@ export default tseslint.config(
           patterns: [
             {
               group: ['**/config/supabase*'],
-              message:
-                'Only repositories may import the Supabase client. Go through a repository.',
+              message: 'Only repositories may import the Supabase client. Go through a repository.',
             },
           ],
         },

@@ -261,6 +261,7 @@ export interface TourRow {
   scheduled_for: string;
   status: TourStatus;
   created_at: string;
+  updated_at: string;
 }
 
 export interface EventRequestRow {
@@ -275,4 +276,140 @@ export interface EventRequestRow {
   notes: string | null;
   status: ApplicationStatus;
   created_at: string;
+  updated_at: string;
+}
+
+// ---------------------------------------------------------------------------
+// Production hardening — rows and views added by
+// `supabase/migrations/20260805000000_production_hardening.sql`.
+// ---------------------------------------------------------------------------
+
+export type DocumentKind = 'student_id' | 'veteran_proof' | 'certification' | 'other';
+export type DocumentStatus = 'submitted' | 'approved' | 'rejected';
+export type PushDeliveryStatus = 'queued' | 'sent' | 'failed';
+
+/**
+ * `live_session_view` — a live session plus the name of the resource it holds.
+ * The endpoint returns this rather than `SessionRow` so the countdown card can
+ * name the booth instead of printing a literal.
+ */
+export interface LiveSessionRow {
+  id: string;
+  profile_id: string;
+  resource_id: string | null;
+  resource_name: string;
+  resource_kind: ResourceKind | null;
+  zone_name: string | null;
+  started_at: string;
+  expires_at: string;
+  ended_at: string | null;
+}
+
+export interface DoorCredentialRow {
+  id: string;
+  profile_id: string;
+  key_id: string;
+  active: boolean;
+  issued_at: string;
+  revoked_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DoorAccessLogRow {
+  id: number;
+  profile_id: string;
+  key_id: string;
+  granted: boolean;
+  reason: string | null;
+  device_hint: string | null;
+  created_at: string;
+}
+
+export interface DocumentRow {
+  id: string;
+  profile_id: string;
+  kind: DocumentKind;
+  storage_path: string;
+  file_name: string;
+  mime_type: string;
+  size_bytes: number;
+  status: DocumentStatus;
+  review_note: string | null;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ContentBlockRow {
+  id: string;
+  slot: string;
+  key: string;
+  label: string;
+  value: string | null;
+  sort_order: number;
+  active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SiteSettingRow {
+  key: string;
+  value: string;
+  description: string | null;
+  members_only: boolean;
+  updated_at: string;
+}
+
+export interface PushDeliveryRow {
+  id: string;
+  profile_id: string;
+  dedupe_key: string;
+  channel: string;
+  title: string;
+  body: string;
+  ticket_id: string | null;
+  status: PushDeliveryStatus;
+  error: string | null;
+  created_at: string;
+}
+
+/** A profile joined to its push token — the fan-out query's row shape. */
+export interface PushTargetRow {
+  profile_id: string;
+  push_token: string;
+  events: boolean;
+  bookings: boolean;
+  weekly_digest: boolean;
+}
+
+export interface StripeWebhookEventRow {
+  id: string;
+  type: string;
+  received_at: string;
+  processed_at: string | null;
+  attempts: number;
+  last_error: string | null;
+}
+
+/** `staff_queue` — everything awaiting a steward, in one shape. */
+export interface StaffQueueRow {
+  kind: 'tour' | 'event_request' | 'program_application' | 'document';
+  id: string;
+  requester_name: string;
+  requester_email: string | null;
+  status: string;
+  detail: string | null;
+  summary: string;
+  created_at: string;
+}
+
+export interface CertificationRow {
+  id: string;
+  profile_id: string;
+  resource_id: string;
+  granted_by: string | null;
+  granted_at: string;
+  expires_at: string | null;
 }

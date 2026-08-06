@@ -48,8 +48,8 @@ export default function BookingSheet() {
   const rescheduleBooking = useRescheduleBooking();
 
   const isRoom = resource?.kind === 'room';
-  const maxHours = resource ? Math.floor(resource.max_duration_minutes / 60) : 4;
-  const minHours = resource ? Math.max(1, Math.floor(resource.min_duration_minutes / 60)) : 1;
+  const maxHours = resource ? Math.floor(resource.maxDurationMinutes / 60) : 4;
+  const minHours = resource ? Math.max(1, Math.floor(resource.minDurationMinutes / 60)) : 1;
 
   const checklist = isRoom
     ? [
@@ -148,7 +148,7 @@ export default function BookingSheet() {
       title={resource.name}
       footer={
         <Button
-          variant="solid"
+          variant="commit"
           size="lg"
           fullWidth
           loading={pending}

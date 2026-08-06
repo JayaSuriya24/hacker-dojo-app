@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react';
 import { XStack, YStack } from 'tamagui';
 import { Button, Card, StatusPill, Text } from '~/components/ui';
-import { formatCountdown } from '~/utils/format';
+import { formatCountdown, formatTime } from '~/utils/format';
 import { space } from '~/theme/tokens';
 import type { LiveSession } from '~/types/domain';
 
 /**
- * The live phone-booth session with its countdown.
+ * The live session with its countdown.
  *
  * The remaining time is recomputed from `expires_at` on every tick rather than
  * decremented from a stored number. Decrementing drifts whenever the app is
@@ -28,19 +28,19 @@ export function LiveSessionCard({
   ending: boolean;
 }) {
   const [remaining, setRemaining] = useState(() =>
-    Math.max(0, Math.floor((new Date(session.expires_at).getTime() - Date.now()) / 1000)),
+    Math.max(0, Math.floor((new Date(session.expiresAt).getTime() - Date.now()) / 1000)),
   );
 
   useEffect(() => {
     const recompute = () =>
       setRemaining(
-        Math.max(0, Math.floor((new Date(session.expires_at).getTime() - Date.now()) / 1000)),
+        Math.max(0, Math.floor((new Date(session.expiresAt).getTime() - Date.now()) / 1000)),
       );
 
     recompute();
     const timer = setInterval(recompute, 1000);
     return () => clearInterval(timer);
-  }, [session.expires_at]);
+  }, [session.expiresAt]);
 
   const minutes = Math.floor(remaining / 60);
   const expired = remaining === 0;
@@ -61,12 +61,13 @@ export function LiveSessionCard({
       </XStack>
 
       <Text variant="title" marginTop={space[2]}>
-        Phone Booth B
+        {session.resourceName}
       </Text>
       <Text variant="small" tone="subtle">
         {expired
-          ? "Time's up — please release the booth"
-          : `Ends at ${new Date(session.expires_at).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}`}
+          ? `Time's up — please release ${session.resourceKind === 'room' ? 'the room' : 'the space'}`
+          : `Ends at ${formatTime(session.expiresAt)}`}
+        {session.zoneName && !expired ? ` · ${session.zoneName}` : ''}
       </Text>
 
       <XStack gap={space[3]} marginTop={space[4]}>

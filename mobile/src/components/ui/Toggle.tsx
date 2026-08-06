@@ -3,6 +3,7 @@ import { XStack, YStack } from 'tamagui';
 import { Text } from './Text';
 import { usePalette } from '~/providers/ThemeProvider';
 import { HIT_SLOP_MIN, space } from '~/theme/tokens';
+import { pressableFocusRing } from '~/theme/focus';
 
 /**
  * A labelled switch row.
@@ -35,7 +36,10 @@ export function Toggle({ label, description, value, onChange, disabled }: Toggle
       accessibilityLabel={label}
       accessibilityHint={description}
       accessibilityState={{ checked: value, disabled: Boolean(disabled) }}
-      style={{ minHeight: HIT_SLOP_MIN, opacity: disabled ? 0.45 : 1 }}
+      style={(state) => [
+        { minHeight: HIT_SLOP_MIN, opacity: disabled ? 0.45 : 1 },
+        pressableFocusRing(state, palette),
+      ]}
     >
       <XStack alignItems="center" gap={space[4]} paddingVertical={space[3]}>
         <YStack flex={1} gap={space[1]}>

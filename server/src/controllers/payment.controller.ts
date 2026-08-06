@@ -20,6 +20,19 @@ export const paymentController = {
   }),
 
   /**
+   * A Stripe-hosted Billing Portal session.
+   *
+   * Replaces the hardcoded `billing.stripe.com/p/login/hackerdojo` link that
+   * Settings used to open, which was never a real portal URL. The response is
+   * a single-use link, so it must not be cached anywhere on the way back.
+   */
+  billingPortal: asyncHandler<AuthenticatedRequest>(async (req, res: Response) => {
+    const session = await paymentService.createBillingPortalSession(req.context.user);
+    res.set('Cache-Control', 'no-store');
+    res.status(201).json({ data: session });
+  }),
+
+  /**
    * Stripe webhook.
    *
    * Two things are load-bearing:

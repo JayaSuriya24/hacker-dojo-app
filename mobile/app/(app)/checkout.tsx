@@ -8,6 +8,7 @@ import { useMembershipCheckout } from '~/features/payments/hooks/usePayments';
 import { usePlans } from '~/features/profile/hooks/useProfile';
 import { usePalette } from '~/providers/ThemeProvider';
 import { userMessage } from '~/services/api/errors';
+import { periodLabel, priceFor } from '~/features/payments/billingPeriod';
 import { formatCurrency } from '~/utils/format';
 import { radius, space } from '~/theme/tokens';
 import type { BillingPeriod } from '~/types/domain';
@@ -33,10 +34,10 @@ export default function CheckoutSheet() {
   const plan = plans.data?.find((entry) => entry.id === planId);
   const billingPeriod: BillingPeriod = period === 'year' ? 'year' : 'month';
 
-  const cents =
-    plan && billingPeriod === 'year' && plan.priceAnnualCents !== null
-      ? plan.priceAnnualCents
-      : (plan?.priceMonthlyCents ?? 0);
+  // The amount shown here and the amount Stripe charges are both derived from
+  // the plan record and the same period value, so the summary cannot claim one
+  // price while the sheet takes another.
+  const cents = plan ? priceFor(billingPeriod, plan) : 0;
 
   const pay = async () => {
     if (!plan) return;
@@ -100,7 +101,7 @@ export default function CheckoutSheet() {
       footer={
         <YStack gap={space[3]}>
           <Button
-            variant="solid"
+            variant="commit"
             size="lg"
             fullWidth
             loading={checkout.isPending}
@@ -147,7 +148,7 @@ export default function CheckoutSheet() {
             <Text variant="small" tone="muted" flex={1}>
               Billing
             </Text>
-            <Text variant="small">{billingPeriod === 'year' ? 'Every year' : 'Every month'}</Text>
+            <Text variant="small">{periodLabel(billingPeriod)}</Text>
           </XStack>
 
           <XStack paddingVertical={space[2]}>

@@ -16,8 +16,10 @@ import {
 import { PricingTable } from '~/features/dojo/components/PricingTable';
 import { FaqList } from '~/features/dojo/components/FaqList';
 import { useMe, usePlans } from '~/features/profile/hooks/useProfile';
+import { useBillingPortal } from '~/features/payments/hooks/usePayments';
 import { useAbout, usePrograms } from '~/features/community/hooks/useCommunity';
 import { usePreferencesStore } from '~/store/preferences.store';
+import { resolvePeriod, toChoice } from '~/features/payments/billingPeriod';
 import { usePalette } from '~/providers/ThemeProvider';
 import { dojo } from '~/constants/config';
 import { space } from '~/theme/tokens';
@@ -37,10 +39,18 @@ export default function DojoScreen() {
   const programs = usePrograms();
   const about = useAbout();
 
-  const period = usePreferencesStore((state) => state.billingPeriod);
+  const storedPeriod = usePreferencesStore((state) => state.billingPeriod);
   const setPeriod = usePreferencesStore((state) => state.setBillingPeriod);
 
+  /**
+   * A member already on an annual plan should see the control on Annual, not on
+   * whatever they last browsed. Their own membership is the better default;
+   * touching the control still wins from then on.
+   */
+  const period = me?.membership ? toChoice(me.membership.period) : storedPeriod;
+
   const [testimonialIndex, setTestimonialIndex] = useState(0);
+  const billingPortal = useBillingPortal();
 
   const isMember = me?.isActiveMember ?? false;
   const testimonials = about.data?.testimonials ?? [];
@@ -52,12 +62,24 @@ export default function DojoScreen() {
     void about.refetch();
   }, [plans, programs, about]);
 
-  const choosePlan = useCallback((plan: Plan) => {
-    router.push({
-      pathname: '/(app)/checkout',
-      params: { planId: plan.id, period: plan.isAddon ? 'month' : 'month' },
-    });
-  }, []);
+  /**
+   * Open checkout for a plan at the period the member actually selected.
+   *
+   * Both branches of the previous ternary read `'month'`, so choosing Annual
+   * showed the annual price and the saving chip and then charged monthly.
+   * `resolvePeriod` is the single place that maps the control's `'mo' | 'yr'`
+   * onto the API's `'month' | 'year'`, and it also carries the rule that
+   * add-ons bill monthly regardless of the toggle.
+   */
+  const choosePlan = useCallback(
+    (plan: Plan) => {
+      router.push({
+        pathname: '/(app)/checkout',
+        params: { planId: plan.id, period: resolvePeriod(period, plan) },
+      });
+    },
+    [period],
+  );
 
   return (
     <Screen onRefresh={onRefresh} refreshing={plans.isRefetching || about.isRefetching}>
@@ -141,7 +163,13 @@ export default function DojoScreen() {
                   : 'Active'}
             </Text>
             <YStack marginTop={space[4]}>
-              <Button variant="secondary" fullWidth onPress={() => router.push('/(app)/settings')}>
+              <Button
+                variant="secondary"
+                fullWidth
+                loading={billingPortal.isPending}
+                onPress={() => billingPortal.mutate()}
+                accessibilityHint="Opens Stripe to change your plan or payment method"
+              >
                 Manage billing
               </Button>
             </YStack>
@@ -341,7 +369,7 @@ export default function DojoScreen() {
               <Avatar
                 name={me.name}
                 initials={me.initials}
-                imageUrl={me.avatarPath}
+                imageUrl={me.avatarUrl}
                 size={46}
                 seed={me.id}
               />

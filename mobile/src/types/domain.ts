@@ -20,6 +20,8 @@ export interface Membership {
   period: string;
   currentPeriodEnd: string | null;
   cancelAtPeriodEnd: boolean;
+  /** True once the plan is a real Stripe subscription the portal can manage. */
+  manageable: boolean;
 }
 
 export interface Me {
@@ -28,6 +30,8 @@ export interface Me {
   name: string;
   initials: string;
   avatarPath: string | null;
+  /** Resolved by the API. The client never builds a storage URL itself. */
+  avatarUrl: string | null;
   role: MemberRole;
   bio: string | null;
   company: string | null;
@@ -81,14 +85,14 @@ export interface Resource {
   seats: number | null;
   amenities: string | null;
   status: ResourceStatus;
-  requires_cert: boolean;
-  min_duration_minutes: number;
-  max_duration_minutes: number;
-  opens_at: string;
-  closes_at: string;
-  image_path: string | null;
-  zone_name: string | null;
-  free_from: string;
+  requiresCert: boolean;
+  minDurationMinutes: number;
+  maxDurationMinutes: number;
+  opensAt: string;
+  closesAt: string;
+  imagePath: string | null;
+  zoneName: string | null;
+  freeFrom: string;
 }
 
 export interface Slot {
@@ -110,11 +114,15 @@ export interface Booking {
 
 export interface LiveSession {
   id: string;
-  profile_id: string;
-  resource_id: string | null;
-  started_at: string;
-  expires_at: string;
-  ended_at: string | null;
+  profileId: string;
+  resourceId: string | null;
+  /** The name of the thing being held — "Phone Booth B", or "The floor". */
+  resourceName: string;
+  resourceKind: ResourceKind | null;
+  zoneName: string | null;
+  startedAt: string;
+  expiresAt: string;
+  endedAt: string | null;
 }
 
 export interface MemberCard {
@@ -122,6 +130,7 @@ export interface MemberCard {
   name: string;
   initials: string;
   avatarPath: string | null;
+  avatarUrl: string | null;
   company: string | null;
   bio: string | null;
   currentProject: string | null;
@@ -138,7 +147,7 @@ export interface Startup {
   mark: string;
   tagline: string;
   stage: string;
-  founded_year: string;
+  foundedYear: string;
   hiring: boolean;
   website: string | null;
 }
@@ -184,8 +193,115 @@ export interface NotificationPreferences {
 
 export interface PaymentSheetParams {
   paymentIntentClientSecret: string;
+  /** Present when the subscription needs a payment method rather than a charge. */
+  setupIntentClientSecret: string | null;
   ephemeralKeySecret: string;
   customerId: string;
   publishableAmountCents: number;
   paymentId: string;
+  subscriptionId: string | null;
+}
+
+export interface BillingPortalSession {
+  url: string;
+  returnUrl: string;
+}
+
+// ---------------------------------------------------------------------------
+// Door access
+// ---------------------------------------------------------------------------
+
+export interface DigitalKey {
+  keyId: string;
+  active: boolean;
+  issuedAt: string;
+}
+
+export interface UnlockResult {
+  granted: boolean;
+  keyId: string;
+  unlockSeconds: number;
+  at: string;
+  message: string;
+}
+
+export interface DoorEvent {
+  id: number;
+  keyId: string;
+  granted: boolean;
+  reason: string | null;
+  at: string;
+}
+
+// ---------------------------------------------------------------------------
+// Site settings and uploads
+// ---------------------------------------------------------------------------
+
+export interface SiteSettings {
+  labStatus: string | null;
+  labHours: string | null;
+  /** Members only. Null for a guest — which is what the UI gates the card on. */
+  wifiSsid: string | null;
+  wifiPassword: string | null;
+}
+
+export type DocumentKind = 'student_id' | 'veteran_proof' | 'certification' | 'other';
+export type DocumentStatus = 'submitted' | 'approved' | 'rejected';
+
+export interface MemberDocument {
+  id: string;
+  kind: DocumentKind;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+  status: DocumentStatus;
+  reviewNote: string | null;
+  submittedAt: string;
+  reviewedAt: string | null;
+  /** Short-lived signed URL. Null in list responses. */
+  url: string | null;
+}
+
+export interface AvatarUploadResult {
+  avatarPath: string;
+  avatarUrl: string;
+}
+
+// ---------------------------------------------------------------------------
+// Staff
+// ---------------------------------------------------------------------------
+
+export type StaffQueueKind = 'tour' | 'event_request' | 'program_application' | 'document';
+export type ApplicationStatus = 'submitted' | 'in_review' | 'accepted' | 'rejected' | 'withdrawn';
+export type TourStatus = 'requested' | 'confirmed' | 'attended' | 'cancelled';
+
+export interface StaffQueueItem {
+  kind: StaffQueueKind;
+  id: string;
+  requesterName: string;
+  requesterEmail: string | null;
+  status: string;
+  summary: string;
+  detail: string | null;
+  createdAt: string;
+}
+
+export interface StaffDashboard {
+  pendingTours: number;
+  pendingEventRequests: number;
+  pendingApplications: number;
+  pendingDocuments: number;
+  activeMembers: number;
+  onFloor: number;
+  totalPending: number;
+}
+
+export interface ContentBlock {
+  id: string;
+  slot: string;
+  key: string;
+  label: string;
+  value: string | null;
+  sortOrder: number;
+  active: boolean;
 }

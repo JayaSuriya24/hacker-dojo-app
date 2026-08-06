@@ -3,6 +3,7 @@ import { unwrap, unwrapList, unwrapMaybe } from '../utils/postgrest.js';
 import type {
   BookingRow,
   BookingWithResourceRow,
+  LiveSessionRow,
   ResourceAvailabilityRow,
   ResourceKind,
   SessionRow,
@@ -147,17 +148,56 @@ export const bookingRepository = {
   },
 };
 
+export interface CreateSessionInput {
+  profileId: string;
+  resourceId: string | null;
+  expiresAt: string;
+}
+
 export const sessionRepository = {
-  async liveForProfile(accessToken: string, profileId: string): Promise<SessionRow | null> {
+  /**
+   * The caller's live session, through `live_session_view` rather than the bare
+   * table: the countdown card needs the name of the thing being held, and
+   * returning the row alone is why it said "Phone Booth B" for every session.
+   */
+  async liveForProfile(accessToken: string, profileId: string): Promise<LiveSessionRow | null> {
     return unwrapMaybe(
       await userClient(accessToken)
-        .from('sessions')
+        .from('live_session_view')
         .select('*')
         .eq('profile_id', profileId)
-        .is('ended_at', null)
         .gt('expires_at', new Date().toISOString())
-        .maybeSingle<SessionRow>(),
+        .maybeSingle<LiveSessionRow>(),
       'Could not load your session.',
+    );
+  },
+
+  /**
+   * Check in. No pre-check for an existing session: the partial unique index on
+   * `(profile_id) where ended_at is null` decides, and a check-then-insert would
+   * lose the race between two taps on a flaky connection.
+   */
+  async create(accessToken: string, input: CreateSessionInput): Promise<LiveSessionRow> {
+    const inserted = unwrap(
+      await userClient(accessToken)
+        .from('sessions')
+        .insert({
+          profile_id: input.profileId,
+          resource_id: input.resourceId,
+          expires_at: input.expiresAt,
+        })
+        .select('id')
+        .single<{ id: string }>(),
+      'Could not check you in.',
+    );
+
+    return unwrap(
+      await userClient(accessToken)
+        .from('live_session_view')
+        .select('*')
+        .eq('id', inserted.id)
+        .single<LiveSessionRow>(),
+      'Could not read your session back.',
     );
   },
 

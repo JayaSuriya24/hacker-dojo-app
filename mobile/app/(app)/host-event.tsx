@@ -110,7 +110,7 @@ export default function HostEventSheet() {
       title="Host an event"
       footer={
         <Button
-          variant="solid"
+          variant="primary"
           size="lg"
           fullWidth
           loading={isSubmitting}

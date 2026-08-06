@@ -2,6 +2,7 @@ import { createFont, createTamagui, createTokens } from 'tamagui';
 import {
   brand,
   darkPalette,
+  fontFamily,
   fontSize,
   fontWeight,
   letterSpacing,
@@ -9,6 +10,7 @@ import {
   lineHeight,
   neutral,
   radius,
+  shadows,
   space,
   status,
 } from './src/theme/tokens';
@@ -28,8 +30,26 @@ import {
  * matches the design file rather than Tamagui's defaults.
  */
 
+/**
+ * Inter.
+ *
+ * `family` is the name `expo-font` registered, not a CSS stack: React Native
+ * has no fallback-list concept and passes the whole string to the platform font
+ * resolver, so the previous `'Inter, system-ui, sans-serif'` matched nothing and
+ * every screen silently rendered in San Francisco or Roboto.
+ *
+ * `face` maps each weight onto its own loaded file. Without it a `fontWeight`
+ * of 500 would ask the OS to synthesise a weight from the 400 file, which on
+ * Android produces a smeared faux-medium rather than Inter Medium.
+ */
 const inter = createFont({
-  family: 'Inter, system-ui, sans-serif',
+  family: fontFamily.regular,
+  face: {
+    '400': { normal: fontFamily.regular },
+    '500': { normal: fontFamily.medium },
+    '600': { normal: fontFamily.semibold },
+    '700': { normal: fontFamily.bold },
+  },
   size: fontSize,
   lineHeight,
   weight: {
@@ -54,7 +74,11 @@ const inter = createFont({
 
 /** Numeric values shown as data — reservation references, times, occupancy. */
 const mono = createFont({
-  family: 'JetBrainsMono, ui-monospace, Menlo, monospace',
+  family: fontFamily.mono,
+  face: {
+    '500': { normal: fontFamily.mono },
+    '600': { normal: fontFamily.monoSemibold },
+  },
   size: fontSize,
   lineHeight,
   weight: { body: fontWeight.medium, title: fontWeight.semibold },
@@ -69,8 +93,10 @@ const tokens = createTokens({
     warn: status.warn,
     error: status.error,
     info: status.info,
-    white: '#ffffff',
-    black: '#07080c',
+    // No `white` / `black` tokens: Nocturne's "do not use pure black or pure
+    // white" is a rule about what components may reach for, and a token that
+    // exists is a token something will eventually use. Both grounds come from
+    // the palettes instead.
   } as Record<string, string>,
   space: { ...space, true: space[4] },
   size: { ...space, true: space[4] },
@@ -82,7 +108,9 @@ const tokens = createTokens({
  * Semantic theme keys. Every component addresses these names, never a ramp
  * step, so the two appearances stay structurally identical.
  */
-function themeFrom(palette: typeof lightPalette) {
+function themeFrom(palette: typeof lightPalette, scheme: 'light' | 'dark') {
+  const elevation = shadows[scheme];
+
   return {
     background: palette.background,
     backgroundHover: palette.surfaceAlt,
@@ -115,7 +143,14 @@ function themeFrom(palette: typeof lightPalette) {
     errorTint: palette.errorTint,
     overlay: palette.overlay,
     skeleton: palette.skeleton,
-    shadowColor: palette.overlay,
+    /**
+     * Elevation colours carry their own alpha, so a component sets
+     * `shadowOpacity: 1` and the theme decides how much ambient darkness the
+     * ground needs — far more on the dark one than the light.
+     */
+    shadowColor: elevation.sm.color,
+    shadowColorRaised: elevation.md.color,
+    shadowColorFloating: elevation.lg.color,
   };
 }
 
@@ -123,8 +158,8 @@ export const config = createTamagui({
   fonts: { body: inter, heading: inter, mono },
   tokens,
   themes: {
-    light: themeFrom(lightPalette),
-    dark: themeFrom(darkPalette),
+    light: themeFrom(lightPalette, 'light'),
+    dark: themeFrom(darkPalette, 'dark'),
   },
   settings: {
     // Left permissive so a component can pass a resolved palette value

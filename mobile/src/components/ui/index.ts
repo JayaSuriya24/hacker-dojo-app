@@ -23,3 +23,4 @@ export {
 } from './States';
 export { Screen, ScreenHeader, Section } from './Screen';
 export { StatusPill } from './StatusPill';
+export { Divider, type DividerProps } from './Divider';

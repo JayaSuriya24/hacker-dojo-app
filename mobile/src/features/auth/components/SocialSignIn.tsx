@@ -21,6 +21,12 @@ import { space } from '~/theme/tokens';
 function GoogleMark() {
   return (
     <Svg width={16} height={16} viewBox="0 0 18 18">
+      {/*
+        The four Google brand colours are the ONE place a literal hex is correct
+        in this codebase: Google's Sign-In branding guidelines require the mark
+        be reproduced in its exact colours, and theming it would be a trademark
+        problem rather than a design improvement.
+      */}
       <Path
         fill="#4285F4"
         d="M17.6 9.2c0-.6-.05-1.2-.16-1.8H9v3.4h4.8a4.1 4.1 0 0 1-1.8 2.7v2.2h2.9c1.7-1.6 2.7-3.9 2.7-6.5z"

@@ -16,9 +16,24 @@ import { radius, space } from '~/theme/tokens';
  * desk verifies the alphanumeric code printed below it, and shipping a real QR
  * encoder for a code a steward reads aloud would be weight for nothing. The
  * pattern is stable per code so it looks like the same badge every time.
+ *
+ * Both colours come from the theme. The badge previously hardcoded a `#ffffff`
+ * ground and painted its cells in `palette.text` — which on the dark ground is
+ * `#e9e9ed`, so the pattern was near-white on white and effectively invisible
+ * in dark mode. It was also the one place in the app where a hex escaped the
+ * theme layer, which is the rule `tokens.ts` exists to enforce.
+ *
+ * The pair is deliberately inverted rather than themed straight through: a
+ * scannable-looking badge needs high contrast between its two colours in both
+ * appearances, so it takes the ground/ink pair rather than surface/text.
  */
 function CheckinPattern({ code }: { code: string }) {
   const palette = usePalette();
+
+  // On the light ground `textInverse` is the near-white neutral and the ink is
+  // the near-black one; on the dark ground both swap, so the badge keeps its
+  // contrast rather than inheriting the page's.
+  const ink = palette.text;
 
   const cells = useMemo(() => {
     let hash = 0;
@@ -43,7 +58,7 @@ function CheckinPattern({ code }: { code: string }) {
         height: 196,
         padding: 12,
         borderRadius: radius.md,
-        backgroundColor: '#ffffff',
+        backgroundColor: palette.textInverse,
         flexDirection: 'row',
         flexWrap: 'wrap',
         alignSelf: 'center',
@@ -55,7 +70,7 @@ function CheckinPattern({ code }: { code: string }) {
           style={{
             width: `${100 / 11}%`,
             height: `${100 / 11}%`,
-            backgroundColor: on ? palette.text : 'transparent',
+            backgroundColor: on ? ink : 'transparent',
           }}
         />
       ))}
@@ -95,7 +110,7 @@ export default function EventSheet() {
       title={event.title}
       footer={
         <Button
-          variant={going ? 'secondary' : 'solid'}
+          variant={going ? 'secondary' : 'primary'}
           size="lg"
           fullWidth
           loading={rsvp.isPending || cancelRsvp.isPending}
