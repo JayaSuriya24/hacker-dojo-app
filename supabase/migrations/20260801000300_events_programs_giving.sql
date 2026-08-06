@@ -38,7 +38,7 @@ create table public.event_rsvps (
   status      public.rsvp_status not null default 'going',
   -- Deterministic per (event, member) so the check-in QR can be re-rendered
   -- offline without another round trip.
-  checkin_code text not null default 'DOJO-' || upper(substr(encode(gen_random_bytes(4), 'hex'), 1, 4)) || '-8QX',
+  checkin_code text not null default 'DOJO-' || upper(substr(replace(gen_random_uuid()::text, '-', ''), 1, 6)),
   checked_in_at timestamptz,
   created_at  timestamptz not null default now(),
   updated_at  timestamptz not null default now(),
@@ -128,7 +128,7 @@ create trigger event_rsvps_stats
 -- ---------------------------------------------------------------------------
 create table public.event_requests (
   id            uuid primary key default gen_random_uuid(),
-  reference     text not null unique default 'REQ-' || upper(substr(encode(gen_random_bytes(2), 'hex'), 1, 4)),
+  reference     text not null unique default 'REQ-' || upper(substr(replace(gen_random_uuid()::text, '-', ''), 1, 8)),
   profile_id    uuid not null references public.profiles (id) on delete cascade,
   title         text not null check (length(btrim(title)) between 3 and 160),
   category      public.event_category not null,

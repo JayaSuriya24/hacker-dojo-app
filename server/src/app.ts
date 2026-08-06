@@ -8,6 +8,7 @@ import { logger } from './config/logger.js';
 import { requestContext } from './middleware/requestContext.js';
 import { globalLimiter } from './middleware/rateLimit.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
+import { requireStripe } from './middleware/requireStripe.js';
 import { apiRouter } from './routes/index.js';
 import { paymentController } from './controllers/payment.controller.js';
 import { AppError } from './utils/errors.js';
@@ -75,6 +76,7 @@ export function createApp(): Express {
   // parse/restringify round trip changes them.
   app.post(
     '/webhooks/stripe',
+    requireStripe,
     express.raw({ type: 'application/json', limit: '1mb' }),
     paymentController.webhook,
   );

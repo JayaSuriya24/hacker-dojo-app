@@ -1,7 +1,6 @@
 import type { Request, Response } from 'express';
 import type Stripe from 'stripe';
-import { stripe } from '../config/stripe.js';
-import { env } from '../config/env.js';
+import { stripe, stripeWebhookSecret } from '../config/stripe.js';
 import { logger } from '../config/logger.js';
 import { paymentService } from '../services/payment.service.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
@@ -50,11 +49,7 @@ export const paymentController = {
 
     let event: Stripe.Event;
     try {
-      event = stripe.webhooks.constructEvent(
-        req.body as Buffer,
-        signature,
-        env.STRIPE_WEBHOOK_SECRET,
-      );
+      event = stripe.webhooks.constructEvent(req.body as Buffer, signature, stripeWebhookSecret);
     } catch (error) {
       logger.warn({ err: error }, 'Rejected a Stripe webhook with a bad signature');
       // 400, not 500: a bad signature is a rejected request, and Stripe should

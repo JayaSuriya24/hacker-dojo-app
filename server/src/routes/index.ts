@@ -12,6 +12,7 @@ import {
   sensitiveLimiter,
   uploadLimiter,
 } from '../middleware/rateLimit.js';
+import { requireStripe } from '../middleware/requireStripe.js';
 import { uuidParam } from '../validators/common.validators.js';
 import {
   applicationStatusSchema,
@@ -260,6 +261,7 @@ apiRouter.post(
 apiRouter.post(
   '/payments/membership-intent',
   requireAuth,
+  requireStripe,
   paymentLimiter,
   validate({ body: membershipIntentSchema }),
   paymentController.membershipIntent,
@@ -267,6 +269,7 @@ apiRouter.post(
 apiRouter.post(
   '/payments/donation-intent',
   optionalAuth,
+  requireStripe,
   paymentLimiter,
   validate({ body: donationIntentSchema }),
   paymentController.donationIntent,
@@ -274,6 +277,7 @@ apiRouter.post(
 apiRouter.post(
   '/payments/billing-portal',
   requireAuth,
+  requireStripe,
   paymentLimiter,
   paymentController.billingPortal,
 );

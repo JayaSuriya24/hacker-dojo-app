@@ -64,7 +64,7 @@ create index certifications_profile_idx on public.certifications (profile_id);
 
 create table public.bookings (
   id          uuid primary key default gen_random_uuid(),
-  reference   text not null unique default 'DJ-' || upper(substr(encode(gen_random_bytes(4), 'hex'), 1, 4)),
+  reference   text not null unique default 'DJ-' || upper(substr(replace(gen_random_uuid()::text, '-', ''), 1, 8)),
   profile_id  uuid not null references public.profiles (id) on delete cascade,
   resource_id uuid not null references public.resources (id) on delete cascade,
   starts_at   timestamptz not null,

@@ -39,6 +39,12 @@ create type public.tour_status as enum ('requested', 'confirmed', 'attended', 'c
 -- policies. Running as the definer with RLS bypassed breaks that cycle.
 -- ---------------------------------------------------------------------------
 
+-- Helper functions below reference tables created in later migrations.
+-- SQL-language function bodies are validated at creation time, so turn that
+-- check off for this file. The functions still work correctly at runtime,
+-- once the tables exist.
+set check_function_bodies = off;
+
 create or replace function public.current_role_of(uid uuid)
 returns public.member_role
 language sql

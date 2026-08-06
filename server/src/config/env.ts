@@ -7,7 +7,33 @@ import { z } from 'zod';
  * missing or malformed. A server that boots with a blank Stripe key and only
  * discovers it on the first checkout is a worse outcome than a server that
  * never booted.
+ *
+ * Values arrive from the process environment. `server/.env` is read into it by
+ * Node's own `--env-file-if-exists` flag in the npm scripts — "if exists"
+ * because a deployed container is configured by its orchestrator and has no
+ * such file, and the strict `--env-file` would refuse to start there.
  */
+
+/**
+ * Treat a not-yet-configured value as absent rather than as a value.
+ *
+ * Two shapes arrive looking like configuration while meaning "I haven't set
+ * this up", and both used to produce a misleading failure:
+ *
+ *   · `KEY=` with nothing after it. Node's env-file loader reads that as an
+ *     empty string, which is *present*, so `.optional()` never fires and the
+ *     operator is told "expected string to have >=1 characters" rather than
+ *     that the key is missing.
+ *   · The placeholders shipped in `.env.example` — `sk_test_...`, `whsec_...`.
+ *     Those satisfy a `startsWith` check, so copying the example booted a
+ *     server that looked healthy and failed on the first Stripe call.
+ */
+function unsetPlaceholder(value: unknown): unknown {
+  if (typeof value !== 'string') return value;
+  const trimmed = value.trim();
+  return trimmed === '' || trimmed.endsWith('...') ? undefined : trimmed;
+}
+
 const EnvSchema = z
   .object({
     NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
@@ -35,8 +61,20 @@ const EnvSchema = z
      */
     SUPABASE_SERVICE_ROLE_KEY: z.string().min(20),
 
-    STRIPE_SECRET_KEY: z.string().startsWith('sk_'),
-    STRIPE_WEBHOOK_SECRET: z.string().startsWith('whsec_'),
+    /**
+     * Stripe. Optional outside production on purpose.
+     *
+     * Bookings, events, the directory and the door do not involve Stripe, and
+     * demanding a payment credential before any of them can be worked on is
+     * friction with no safety benefit. While it is unset the payment routes
+     * answer 503 with a sentence saying so, and the refinement below makes
+     * production refuse to start without it.
+     */
+    STRIPE_SECRET_KEY: z.preprocess(unsetPlaceholder, z.string().startsWith('sk_').optional()),
+    STRIPE_WEBHOOK_SECRET: z.preprocess(
+      unsetPlaceholder,
+      z.string().startsWith('whsec_').optional(),
+    ),
 
     /**
      * Where Stripe returns a member after the Billing Portal. A deep link into
@@ -50,7 +88,7 @@ const EnvSchema = z
      * records deliveries and logs, but sends nothing — which is the correct
      * behaviour in a local environment rather than a hard startup failure.
      */
-    EXPO_ACCESS_TOKEN: z.string().min(1).optional(),
+    EXPO_ACCESS_TOKEN: z.preprocess(unsetPlaceholder, z.string().min(1).optional()),
 
     /** How often the API samples live sessions into `occupancy_samples`. */
     OCCUPANCY_SAMPLE_INTERVAL_MS: z.coerce
@@ -106,7 +144,23 @@ const EnvSchema = z
         message: 'CORS_ORIGINS must be set explicitly in production — no wildcard fallback.',
       });
     }
-    if (env.STRIPE_SECRET_KEY.startsWith('sk_test_')) {
+    // What development may omit, production must have.
+    if (!env.STRIPE_SECRET_KEY) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['STRIPE_SECRET_KEY'],
+        message: 'STRIPE_SECRET_KEY is required in production — checkout would be dead.',
+      });
+    }
+    if (!env.STRIPE_WEBHOOK_SECRET) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['STRIPE_WEBHOOK_SECRET'],
+        message:
+          'STRIPE_WEBHOOK_SECRET is required in production — memberships are granted by webhook.',
+      });
+    }
+    if (env.STRIPE_SECRET_KEY?.startsWith('sk_test_')) {
       ctx.addIssue({
         code: 'custom',
         path: ['STRIPE_SECRET_KEY'],
