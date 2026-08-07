@@ -43,8 +43,12 @@ max_frequency = "60s"
 otp_length = 6
 otp_expiry = 600
 
-[auth.email.template.magic_link]
-subject = "Your Hacker Dojo sign-in link"
+# Custom email templates need either a paid plan or a custom SMTP provider —
+# `config push` fails the WHOLE auth update with a 400 otherwise, so this stays
+# commented until [auth.email.smtp] is configured. It still applies to a local
+# `supabase start`, which runs its own Inbucket and does not care.
+# [auth.email.template.magic_link]
+# subject = "Your Hacker Dojo sign-in link"
 
 [auth.sms]
 enable_signup = false
@@ -70,8 +74,19 @@ client_id = "env(SUPABASE_AUTH_GOOGLE_CLIENT_ID)"
 secret = "env(SUPABASE_AUTH_GOOGLE_SECRET)"
 skip_nonce_check = false
 
+# Off until the Apple credentials exist. Enabling a provider with an empty
+# secret does not fail loudly — it pushes a broken provider that answers every
+# sign-in attempt with an invalid_client error from Apple.
+#
+# To turn on: create a Services ID and an ES256 .p8 key in the Apple Developer
+# portal, mint the client secret JWT from the key, put both in `supabase/.env`,
+# flip `enabled` back to true and run `supabase config push`.
+#
+# Note this is separate from the NATIVE flow the app actually uses on iOS —
+# `signInWithIdToken` in auth.service.ts — which App Store guideline 4.8
+# requires. That one needs this provider configured too.
 [auth.external.apple]
-enabled = true
+enabled = false
 client_id = "env(SUPABASE_AUTH_APPLE_CLIENT_ID)"
 secret = "env(SUPABASE_AUTH_APPLE_SECRET)"
 
