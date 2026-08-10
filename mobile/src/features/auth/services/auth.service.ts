@@ -4,7 +4,7 @@ import * as WebBrowser from 'expo-web-browser';
 import * as Linking from 'expo-linking';
 import { supabase } from '~/services/supabase';
 import { logger } from '~/services/logger';
-import { ApiError } from '~/services/api/errors';
+import { ApiError, type ApiErrorCode } from '~/services/api/errors';
 
 /**
  * Authentication.
@@ -20,51 +20,220 @@ import { ApiError } from '~/services/api/errors';
 
 const REDIRECT_URL = Linking.createURL('/auth/callback');
 
-function toApiError(
-  error: { message: string; status?: number } | null,
-  fallback: string,
-): ApiError {
+/**
+ * Supabase's own error shape. `code` is the stable machine string
+ * (`invalid_credentials`, `otp_disabled`, …); `message` is English prose that
+ * changes between releases, which is why it is only ever a fallback here.
+ */
+interface SupabaseAuthError {
+  message: string;
+  status?: number;
+  code?: string;
+}
+
+interface Mapped {
+  code: ApiErrorCode;
+  message: string;
+  status: number;
+  retryable?: boolean;
+}
+
+/**
+ * Supabase auth codes to the message a member should read.
+ *
+ * Two of these are worth explaining, because the obvious version is wrong:
+ *
+ * `invalid_credentials` is returned for BOTH a wrong password and an address
+ * with no account — Supabase does not distinguish them, and neither should we.
+ * Answering "no account with that email" would turn the sign-in form into an
+ * account-enumeration oracle: anyone could test addresses for membership. The
+ * deliberately ambiguous wording is the security property, not an oversight.
+ *
+ * `otp_disabled` is the opposite call. It means "no account, and this flow may
+ * not create one", and it IS surfaced plainly. The member is sitting on a
+ * screen waiting for a code that will never arrive, Supabase already returns a
+ * distinguishable code to anyone calling the API directly, so silence here buys
+ * nothing and strands someone who simply mistyped their address.
+ */
+const BY_CODE: Record<string, Mapped> = {
+  // Credentials and identity
+  invalid_credentials: {
+    code: 'unauthorized',
+    message: 'Email or password is incorrect.',
+    status: 401,
+  },
+  user_not_found: {
+    code: 'not_found',
+    message: 'We could not find an account for that email.',
+    status: 404,
+  },
+  otp_disabled: {
+    code: 'not_found',
+    message: 'We could not find an account for that email. Create one to get started.',
+    status: 404,
+  },
+  user_already_exists: {
+    code: 'conflict',
+    message: 'That email already has an account. Sign in instead.',
+    status: 409,
+  },
+  email_exists: {
+    code: 'conflict',
+    message: 'That email already has an account. Sign in instead.',
+    status: 409,
+  },
+  phone_exists: {
+    code: 'conflict',
+    message: 'That phone number already has an account. Sign in instead.',
+    status: 409,
+  },
+  user_banned: {
+    code: 'forbidden',
+    message: 'That account is suspended. Email staff@hackerdojo.org to sort it out.',
+    status: 403,
+  },
+
+  // Confirmation
+  email_not_confirmed: {
+    code: 'forbidden',
+    message: 'Confirm your email first — check your inbox for the link.',
+    status: 403,
+  },
+  phone_not_confirmed: {
+    code: 'forbidden',
+    message: 'Confirm your phone number first — check your texts for the code.',
+    status: 403,
+  },
+
+  // One-time codes
+  otp_expired: {
+    code: 'unauthorized',
+    message: 'That code is incorrect or expired. Request a new one.',
+    status: 401,
+  },
+
+  // Passwords
+  weak_password: {
+    code: 'validation_failed',
+    message: 'Use at least 8 characters, with an uppercase letter and a number.',
+    status: 422,
+  },
+  same_password: {
+    code: 'bad_request',
+    message: 'Pick a password you have not used here before.',
+    status: 400,
+  },
+
+  // Addresses
+  email_address_invalid: {
+    code: 'validation_failed',
+    message: 'That email address does not look right.',
+    status: 422,
+  },
+  validation_failed: {
+    code: 'validation_failed',
+    message: 'Check the details you entered and try again.',
+    status: 422,
+  },
+
+  // Rate limits — all retryable, which is what drives the retry affordance.
+  over_email_send_rate_limit: {
+    code: 'rate_limited',
+    message: 'Too many emails just went out. Wait a minute and try again.',
+    status: 429,
+    retryable: true,
+  },
+  over_sms_send_rate_limit: {
+    code: 'rate_limited',
+    message: 'Too many texts just went out. Wait a minute and try again.',
+    status: 429,
+    retryable: true,
+  },
+  over_request_rate_limit: {
+    code: 'rate_limited',
+    message: 'Too many attempts. Wait a minute and try again.',
+    status: 429,
+    retryable: true,
+  },
+
+  // Sessions — these route back to sign-in via `ApiError.isAuthFailure`.
+  session_expired: {
+    code: 'session_expired',
+    message: 'Your session expired. Sign in again.',
+    status: 401,
+  },
+  session_not_found: {
+    code: 'session_expired',
+    message: 'Your session expired. Sign in again.',
+    status: 401,
+  },
+  bad_jwt: {
+    code: 'session_expired',
+    message: 'Your session expired. Sign in again.',
+    status: 401,
+  },
+  refresh_token_not_found: {
+    code: 'session_expired',
+    message: 'Your session expired. Sign in again.',
+    status: 401,
+  },
+
+  // Provider availability
+  signup_disabled: {
+    code: 'forbidden',
+    message: 'New accounts are closed right now. Email staff@hackerdojo.org.',
+    status: 403,
+  },
+  email_provider_disabled: {
+    code: 'upstream_unavailable',
+    message: 'Email sign-in is unavailable right now. Try another method.',
+    status: 503,
+    retryable: true,
+  },
+  captcha_failed: {
+    code: 'bad_request',
+    message: 'That security check did not pass. Try again.',
+    status: 400,
+    retryable: true,
+  },
+};
+
+/**
+ * Prose fallbacks, for errors that arrive without a `code`.
+ *
+ * Older Supabase releases and a few network-layer failures omit it. Matching on
+ * text is brittle, which is exactly why it sits behind the code table rather
+ * than in front of it.
+ */
+function fromMessage(message: string): Mapped | undefined {
+  if (message.includes('invalid login credentials')) return BY_CODE['invalid_credentials'];
+  if (message.includes('email not confirmed')) return BY_CODE['email_not_confirmed'];
+  if (message.includes('already registered') || message.includes('already been registered')) {
+    return BY_CODE['user_already_exists'];
+  }
+  if (message.includes('signups not allowed')) return BY_CODE['otp_disabled'];
+  if (message.includes('token has expired') || message.includes('invalid token')) {
+    return BY_CODE['otp_expired'];
+  }
+  if (message.includes('rate limit')) return BY_CODE['over_request_rate_limit'];
+  return undefined;
+}
+
+function toApiError(error: SupabaseAuthError | null, fallback: string): ApiError {
   if (!error) return ApiError.unknown(fallback);
 
-  const message = error.message.toLowerCase();
+  const mapped =
+    (error.code ? BY_CODE[error.code] : undefined) ?? fromMessage(error.message.toLowerCase());
 
-  if (message.includes('invalid login credentials')) {
-    return new ApiError({
-      code: 'unauthorized',
-      message: 'Email or password is incorrect.',
-      status: 401,
-    });
-  }
-  if (message.includes('email not confirmed')) {
-    return new ApiError({
-      code: 'forbidden',
-      message: 'Confirm your email first — check your inbox for the link.',
-      status: 403,
-    });
-  }
-  if (message.includes('already registered') || message.includes('already been registered')) {
-    return new ApiError({
-      code: 'conflict',
-      message: 'That email already has an account. Sign in instead.',
-      status: 409,
-    });
-  }
-  if (message.includes('rate limit') || error.status === 429) {
-    return new ApiError({
-      code: 'rate_limited',
-      message: 'Too many attempts. Wait a minute and try again.',
-      status: 429,
-      retryable: true,
-    });
-  }
-  if (message.includes('token has expired') || message.includes('invalid token')) {
-    return new ApiError({
-      code: 'unauthorized',
-      message: 'That code is incorrect or expired. Request a new one.',
-      status: 401,
-    });
-  }
+  if (mapped) return new ApiError(mapped);
 
+  // A 429 that named no code we know is still a rate limit; the retry
+  // affordance matters more than the exact wording.
+  if (error.status === 429) return new ApiError(BY_CODE['over_request_rate_limit'] as Mapped);
+
+  // Log the unmapped shape so the table can grow, but show the caller's own
+  // sentence — it is written for the specific flow that failed.
+  logger.warn('Unmapped Supabase auth error', { code: error.code, status: error.status });
   return new ApiError({ code: 'internal_error', message: fallback, status: error.status ?? 500 });
 }
 
