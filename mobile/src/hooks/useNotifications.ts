@@ -24,6 +24,23 @@ import { brand } from '~/theme/tokens';
  *   notification settings row instead.
  */
 
+/**
+ * expo-notifications ships web builds for only three of its modules — badge,
+ * device push token, and server registration. Scheduling, cancelling and
+ * Expo push tokens all resolve to the expo-modules-core proxy on web, which
+ * throws "The method or property X is not available on web" on the first call.
+ *
+ * `setNotificationHandler` and the response listener are safe: they are plain
+ * JS and are already exercised on every web load by the root layout.
+ *
+ * Local reminders are a native affordance and the web target exists to lay out
+ * screens, so each entry point below degrades to a documented no-op. Throwing
+ * would be worse: the caller is a booking confirmation that has already
+ * succeeded server-side, and there is nothing useful for it to do with the
+ * failure.
+ */
+const supportsScheduledNotifications = Platform.OS !== 'web';
+
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowBanner: true,
@@ -116,6 +133,13 @@ export function useRegisterPushToken() {
   return useCallback(async (): Promise<boolean> => {
     if (!isAuthenticated) return false;
 
+    // Expo push tokens need a native push service. `Device.isDevice` is true in
+    // a browser, so it does not stand in for this check.
+    if (!supportsScheduledNotifications) {
+      logger.info('Skipping push registration on web');
+      return false;
+    }
+
     // A simulator has no push service to register with.
     if (!Device.isDevice) {
       logger.info('Skipping push registration on a simulator');
@@ -157,6 +181,8 @@ export async function scheduleBookingReminder(input: {
   startsAt: Date;
   minutesBefore?: number;
 }): Promise<string | null> {
+  if (!supportsScheduledNotifications) return null;
+
   const fireAt = new Date(input.startsAt.getTime() - (input.minutesBefore ?? 15) * 60_000);
   if (fireAt.getTime() <= Date.now()) return null;
 
@@ -180,5 +206,6 @@ export async function scheduleBookingReminder(input: {
 }
 
 export async function cancelScheduled(identifier: string): Promise<void> {
+  if (!supportsScheduledNotifications) return;
   await Notifications.cancelScheduledNotificationAsync(identifier);
 }
