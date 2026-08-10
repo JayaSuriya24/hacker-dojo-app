@@ -66,6 +66,12 @@ export function Avatar({ name, initials, imageUrl, size = 42, present, seed }: A
             fontWeight="700"
             color={palette.onAccent}
             maxFontSizeMultiplier={1}
+            // Above the gradient. On native the gradient is a background and
+            // its children draw over it; on web Tamagui paints it as a
+            // positioned overlay div, which covered the initials and left a
+            // plain coloured circle. z-index applies here without an explicit
+            // position because the Text is a flex item of the gradient.
+            zIndex={1}
           >
             {initials}
           </Text>
