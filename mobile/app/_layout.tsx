@@ -13,11 +13,16 @@ import { useNotificationSetup } from '~/hooks/useNotifications';
 import { useDeepLinks } from '~/hooks/useDeepLinks';
 import { useAppFonts } from '~/theme/useAppFonts';
 import { logger } from '~/services/logger';
+import { silenceWebPropWarnings } from '~/services/silenceWebPropWarnings';
 
 // Hold the native splash until the persisted session AND the design system's
 // typefaces have been read, so an already-signed-in member never sees the
 // sign-in screen flash past and no frame is painted in the fallback face.
 void SplashScreen.preventAutoHideAsync();
+
+// Drops one third-party `collapsable` warning on web in development. Scoped to
+// that exact message so our own prop mistakes still surface — see the module.
+silenceWebPropWarnings();
 
 /**
  * The provider stack. Order is not arbitrary:
