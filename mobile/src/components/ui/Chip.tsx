@@ -8,7 +8,7 @@ import { pressableFocusRing } from '~/theme/focus';
  * The pill used for filters (event categories, directory skills) and for
  * static labels (category tags, "Hiring", "At capacity").
  *
- * Selection is exposed to assistive tech through `accessibilityState.selected`
+ * Selection is exposed to assistive tech through `aria-selected`
  * rather than colour alone — a filter row that only signals state with a tint
  * is unusable with a screen reader and ambiguous for colour-blind users, which
  * is also why the selected state changes the border weight and text colour, not
@@ -64,7 +64,7 @@ export function Chip({ label, selected = false, onPress, tone = 'accent', readOn
 
   if (readOnly || !onPress) {
     return (
-      <View style={containerStyle} accessible accessibilityRole="text">
+      <View style={containerStyle} accessible>
         {content}
       </View>
     );
@@ -73,9 +73,9 @@ export function Chip({ label, selected = false, onPress, tone = 'accent', readOn
   return (
     <Pressable
       onPress={onPress}
-      accessibilityRole="button"
-      accessibilityLabel={label}
-      accessibilityState={{ selected }}
+      role="button"
+      aria-label={label}
+      aria-selected={selected}
       style={(state) => [
         containerStyle,
         state.pressed && { backgroundColor: palette.accentTint },

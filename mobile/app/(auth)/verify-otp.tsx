@@ -89,8 +89,8 @@ export default function VerifyOtpScreen() {
 
   const banner = formError ? (
     <View
-      accessibilityLiveRegion="assertive"
-      accessibilityRole="alert"
+      aria-live="assertive"
+      role="alert"
       style={{
         backgroundColor: palette.errorTint,
         borderWidth: 1,
@@ -105,7 +105,7 @@ export default function VerifyOtpScreen() {
     </View>
   ) : notice ? (
     <View
-      accessibilityLiveRegion="polite"
+      aria-live="polite"
       style={{
         backgroundColor: palette.accentTint,
         borderWidth: 1,
@@ -188,7 +188,7 @@ export default function VerifyOtpScreen() {
         {banner}
 
         <Segmented
-          accessibilityLabel="Where to send the code"
+          aria-label="Where to send the code"
           options={[
             { value: 'email', label: 'Email' },
             { value: 'phone', label: 'Mobile' },

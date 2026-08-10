@@ -23,21 +23,27 @@ export interface SegmentedProps<T extends string> {
   options: ReadonlyArray<SegmentedOption<T>>;
   value: T;
   onChange: (value: T) => void;
-  accessibilityLabel?: string;
+  /**
+   * Named for the DOM attribute rather than React Native's `accessibilityLabel`
+   * so it matches what callers write. Worth knowing: TypeScript does not
+   * excess-property-check hyphenated JSX attributes, so a mismatch here fails
+   * silently at runtime instead of at the type level.
+   */
+  'aria-label'?: string;
 }
 
 export function Segmented<T extends string>({
   options,
   value,
   onChange,
-  accessibilityLabel,
+  'aria-label': ariaLabel,
 }: SegmentedProps<T>) {
   const palette = usePalette();
 
   return (
     <XStack
-      accessibilityRole="tablist"
-      accessibilityLabel={accessibilityLabel}
+      role="tablist"
+      aria-label={ariaLabel}
       backgroundColor="$surfaceAlt"
       borderWidth={1}
       borderColor="$borderColor"
@@ -52,9 +58,9 @@ export function Segmented<T extends string>({
           <Pressable
             key={option.value}
             onPress={() => onChange(option.value)}
-            accessibilityRole="tab"
-            accessibilityLabel={option.label}
-            accessibilityState={{ selected }}
+            role="tab"
+            aria-label={option.label}
+            aria-selected={selected}
             style={(state) => [{ flex: 1 }, pressableFocusRing(state, palette)]}
           >
             <View

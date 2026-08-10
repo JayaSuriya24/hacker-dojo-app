@@ -88,8 +88,8 @@ export default function DonateSheet() {
 
         {error ? (
           <View
-            accessibilityLiveRegion="assertive"
-            accessibilityRole="alert"
+            aria-live="assertive"
+            role="alert"
             style={{
               backgroundColor: palette.errorTint,
               borderWidth: 1,
@@ -113,9 +113,9 @@ export default function DonateSheet() {
               <Pressable
                 key={String(option)}
                 onPress={() => setPreset(option)}
-                accessibilityRole="button"
-                accessibilityLabel={option === 'custom' ? 'Enter another amount' : label}
-                accessibilityState={{ selected }}
+                role="button"
+                aria-label={option === 'custom' ? 'Enter another amount' : label}
+                aria-selected={selected}
                 style={{
                   width: '23%',
                   minHeight: 48,

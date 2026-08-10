@@ -38,8 +38,8 @@ export function Avatar({ name, initials, imageUrl, size = 42, present, seed }: A
       // One accessible node, not two: a screen reader should say "Priya Raman,
       // on the floor", never "P R" followed by an unlabelled image.
       accessible
-      accessibilityRole="image"
-      accessibilityLabel={present ? `${name}, on the floor` : name}
+      role="img"
+      aria-label={present ? `${name}, on the floor` : name}
       style={{ width: size, height: size }}
     >
       {imageUrl ? (

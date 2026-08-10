@@ -49,18 +49,18 @@ export function FaqList({
           >
             <Pressable
               onPress={() => toggle(faq.id)}
-              accessibilityRole="button"
-              accessibilityLabel={faq.question}
+              role="button"
+              aria-label={faq.question}
               // `expanded` is what makes a screen reader say "collapsed" /
               // "expanded" rather than leaving the +/− glyph as the only cue.
-              accessibilityState={{ expanded: open }}
+              aria-expanded={open}
               style={{ minHeight: 48, paddingHorizontal: space[5], paddingVertical: space[4] }}
             >
               <XStack alignItems="center" gap={space[4]}>
                 <Text variant="body" flex={1}>
                   {faq.question}
                 </Text>
-                <Text variant="title" tone="subtle" accessibilityElementsHidden>
+                <Text variant="title" tone="subtle" aria-hidden>
                   {open ? '−' : '+'}
                 </Text>
               </XStack>

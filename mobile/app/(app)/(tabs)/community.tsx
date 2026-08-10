@@ -81,7 +81,7 @@ export default function CommunityScreen() {
         <ScreenHeader eyebrow="Members only" title="Community" />
 
         <Segmented
-          accessibilityLabel="Community view"
+          aria-label="Community view"
           options={[
             { value: 'here', label: "Who's here" },
             { value: 'members', label: 'Members' },
@@ -123,7 +123,7 @@ export default function CommunityScreen() {
       />
 
       <Segmented
-        accessibilityLabel="Community view"
+        aria-label="Community view"
         options={[
           { value: 'here', label: "Who's here" },
           { value: 'members', label: 'Members' },
@@ -176,8 +176,8 @@ export default function CommunityScreen() {
                   clearSkills();
                   setSearch('');
                 }}
-                accessibilityRole="button"
-                accessibilityLabel="Clear all filters"
+                role="button"
+                aria-label="Clear all filters"
                 hitSlop={8}
                 style={{ marginLeft: 'auto' }}
               >
@@ -217,7 +217,7 @@ export default function CommunityScreen() {
                 alignItems: 'center',
                 justifyContent: 'center',
               }}
-              accessibilityElementsHidden
+              aria-hidden
             >
               <Text variant="mono" fontWeight="700" tone="accent">
                 {item.mark}
@@ -279,8 +279,8 @@ export default function CommunityScreen() {
       renderItem={({ item }) => (
         <Pressable
           onPress={() => router.push(`/(app)/member/${item.id}`)}
-          accessibilityRole="button"
-          accessibilityLabel={`${item.name}. ${item.isHere ? `On the floor in ${item.zoneName ?? 'the space'}.` : 'Away.'} ${item.skillLine}`}
+          role="button"
+          aria-label={`${item.name}. ${item.isHere ? `On the floor in ${item.zoneName ?? 'the space'}.` : 'Away.'} ${item.skillLine}`}
           accessibilityHint="Opens their profile"
         >
           <Card interactive flexDirection="row" gap={space[4]} alignItems="flex-start">

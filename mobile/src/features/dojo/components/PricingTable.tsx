@@ -42,7 +42,7 @@ export function PricingTable({
             key={plan.id}
             borderColor={plan.isPopular ? '$accentBorder' : '$borderColor'}
             accessible
-            accessibilityLabel={`${plan.name}, ${formatCurrency(cents)} per ${showAnnual ? 'year' : 'month'}. ${plan.description}`}
+            aria-label={`${plan.name}, ${formatCurrency(cents)} per ${showAnnual ? 'year' : 'month'}. ${plan.description}`}
           >
             <XStack alignItems="center" gap={space[2]} flexWrap="wrap">
               <Text variant="title">{plan.name}</Text>

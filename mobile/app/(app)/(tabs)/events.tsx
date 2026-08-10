@@ -74,7 +74,7 @@ export default function EventsScreen() {
           showsHorizontalScrollIndicator={false}
           style={{ marginHorizontal: -space[5] }}
           contentContainerStyle={{ paddingHorizontal: space[5], gap: space[2] }}
-          accessibilityRole="tablist"
+          role="tablist"
         >
           {CATEGORIES.map((entry) => (
             <Chip

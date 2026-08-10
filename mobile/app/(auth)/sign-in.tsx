@@ -81,8 +81,8 @@ export default function SignInScreen() {
       <YStack gap={space[5]}>
         {formError ? (
           <View
-            accessibilityLiveRegion="assertive"
-            accessibilityRole="alert"
+            aria-live="assertive"
+            role="alert"
             style={{
               backgroundColor: palette.errorTint,
               borderWidth: 1,
@@ -156,9 +156,9 @@ export default function SignInScreen() {
             render={({ field: { onChange, value } }) => (
               <Pressable
                 onPress={() => onChange(!value)}
-                accessibilityRole="checkbox"
-                accessibilityLabel="Keep me signed in"
-                accessibilityState={{ checked: Boolean(value) }}
+                role="checkbox"
+                aria-label="Keep me signed in"
+                aria-checked={Boolean(value)}
                 style={{ minHeight: 44, justifyContent: 'center' }}
               >
                 <XStack alignItems="center" gap={space[3]}>
@@ -190,7 +190,7 @@ export default function SignInScreen() {
 
           <Link href="/(auth)/forgot-password" asChild>
             <Pressable
-              accessibilityRole="link"
+              role="link"
               style={{ marginLeft: 'auto', minHeight: 44, justifyContent: 'center' }}
             >
               <Text variant="small" tone="subtle">

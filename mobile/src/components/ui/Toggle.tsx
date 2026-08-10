@@ -32,10 +32,11 @@ export function Toggle({ label, description, value, onChange, disabled }: Toggle
     <Pressable
       onPress={() => onChange(!value)}
       disabled={disabled}
-      accessibilityRole="switch"
-      accessibilityLabel={label}
+      role="switch"
+      aria-label={label}
       accessibilityHint={description}
-      accessibilityState={{ checked: value, disabled: Boolean(disabled) }}
+      aria-checked={value}
+      aria-disabled={Boolean(disabled)}
       style={(state) => [
         { minHeight: HIT_SLOP_MIN, opacity: disabled ? 0.45 : 1 },
         pressableFocusRing(state, palette),
@@ -54,7 +55,7 @@ export function Toggle({ label, description, value, onChange, disabled }: Toggle
         {/* The Switch itself is hidden from assistive tech — the Pressable
             above already exposes the switch role and its state, and leaving
             both visible makes VoiceOver announce the control twice. */}
-        <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+        <View aria-hidden>
           <Switch
             value={value}
             onValueChange={onChange}

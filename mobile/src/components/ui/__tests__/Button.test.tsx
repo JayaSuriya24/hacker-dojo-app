@@ -36,7 +36,7 @@ describe('Button', () => {
     // Icon-ish labels like "‹" are meaningless read aloud, which is why every
     // call site that uses one passes a real label.
     renderWithTheme(
-      <Button onPress={jest.fn()} accessibilityLabel="Previous quote">
+      <Button onPress={jest.fn()} aria-label="Previous quote">
         ‹
       </Button>,
     );

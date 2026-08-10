@@ -119,8 +119,7 @@ export function DigitalKey() {
         <View style={{ width: 74, height: 74, alignItems: 'center', justifyContent: 'center' }}>
           {state === 'reading' ? (
             <Animated.View
-              accessibilityElementsHidden
-              importantForAccessibility="no-hide-descendants"
+              aria-hidden
               style={{
                 position: 'absolute',
                 width: 74,
@@ -139,13 +138,11 @@ export function DigitalKey() {
           <Pressable
             onPress={() => void handleUnlock()}
             disabled={state === 'reading' || !key.data?.active}
-            accessibilityRole="button"
-            accessibilityLabel="Unlock the front door"
+            role="button"
+            aria-label="Unlock the front door"
             accessibilityHint="Hold your phone near the reader after tapping"
-            accessibilityState={{
-              busy: state === 'reading',
-              disabled: state === 'reading' || !key.data?.active,
-            }}
+            aria-busy={state === 'reading'}
+            aria-disabled={state === 'reading' || !key.data?.active}
             style={({ pressed }) => ({
               width: 64,
               height: 64,
@@ -203,7 +200,7 @@ export function DigitalKey() {
 
         {/* `polite` so the state change is read after the current utterance
             rather than cutting across the button's own label. */}
-        <YStack flex={1} gap={space[1]} accessibilityLiveRegion="polite">
+        <YStack flex={1} gap={space[1]} aria-live="polite">
           <Text variant="title" color={state === 'refused' ? labelTone : palette.text}>
             {copy.title}
           </Text>

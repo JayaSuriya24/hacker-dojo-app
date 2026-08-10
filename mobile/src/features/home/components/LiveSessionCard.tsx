@@ -54,7 +54,7 @@ export function LiveSessionCard({
           marginLeft="auto"
           tone={expired ? 'error' : 'default'}
           // Read as a whole rather than digit by digit as it ticks.
-          accessibilityLabel={expired ? 'Session expired' : `${minutes} minutes remaining`}
+          aria-label={expired ? 'Session expired' : `${minutes} minutes remaining`}
         >
           {formatCountdown(remaining)}
         </Text>

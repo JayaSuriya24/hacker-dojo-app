@@ -41,10 +41,10 @@ function EventCardComponent({ event, onPress, onRsvp, rsvpPending }: EventCardPr
     <Card>
       <Pressable
         onPress={onPress}
-        accessibilityRole="button"
+        role="button"
         // One label carrying everything a sighted member reads at a glance,
         // rather than five separate nodes to swipe through.
-        accessibilityLabel={`${event.title}. ${month} ${day} at ${formatTime(event.startsAt)}, ${event.roomName}. Hosted by ${event.hostName}. ${event.goingCount} of ${event.capacity} going.`}
+        aria-label={`${event.title}. ${month} ${day} at ${formatTime(event.startsAt)}, ${event.roomName}. Hosted by ${event.hostName}. ${event.goingCount} of ${event.capacity} going.`}
         accessibilityHint="Opens the event details"
       >
         <XStack gap={space[4]} alignItems="flex-start">
@@ -56,7 +56,7 @@ function EventCardComponent({ event, onPress, onRsvp, rsvpPending }: EventCardPr
             borderWidth={1}
             borderColor="$borderColor"
             borderRadius={radius.md}
-            accessibilityElementsHidden
+            aria-hidden
           >
             <Text variant="caption" tone="subtle">
               {month}
@@ -87,7 +87,7 @@ function EventCardComponent({ event, onPress, onRsvp, rsvpPending }: EventCardPr
 
       {/* Capacity. The numbers above the bar carry the same information, so the
           bar is reinforcement rather than the only signal. */}
-      <YStack gap={space[2]} marginTop={space[3]} accessibilityElementsHidden>
+      <YStack gap={space[2]} marginTop={space[3]} aria-hidden>
         <XStack>
           <Text variant="caption" tone="subtle">
             {event.goingCount} going
@@ -120,9 +120,7 @@ function EventCardComponent({ event, onPress, onRsvp, rsvpPending }: EventCardPr
           variant={going ? 'primary' : 'secondary'}
           loading={rsvpPending}
           onPress={onRsvp}
-          accessibilityLabel={
-            going ? `Cancel your RSVP for ${event.title}` : `RSVP to ${event.title}`
-          }
+          aria-label={going ? `Cancel your RSVP for ${event.title}` : `RSVP to ${event.title}`}
         >
           {going
             ? 'Going ✓'

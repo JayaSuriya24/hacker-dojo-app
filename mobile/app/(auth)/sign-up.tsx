@@ -74,8 +74,8 @@ export default function SignUpScreen() {
       <YStack gap={space[5]}>
         {formError ? (
           <View
-            accessibilityLiveRegion="assertive"
-            accessibilityRole="alert"
+            aria-live="assertive"
+            role="alert"
             style={{
               backgroundColor: palette.errorTint,
               borderWidth: 1,
@@ -158,7 +158,7 @@ export default function SignUpScreen() {
               {/* Strength meter. Indicative — the schema is what gates submit,
                   and the hint text carries the same information as the bars for
                   anyone who cannot distinguish the colours. */}
-              <YStack gap={space[2]} accessibilityElementsHidden>
+              <YStack gap={space[2]} aria-hidden>
                 <XStack gap={space[1]}>
                   {[0, 1, 2, 3].map((index) => (
                     <View
@@ -194,7 +194,7 @@ export default function SignUpScreen() {
                 Choose a plan
               </Text>
 
-              <YStack gap={space[2]} accessibilityRole="radiogroup">
+              <YStack gap={space[2]} role="radiogroup">
                 {selectablePlans.map((plan) => {
                   const selected = plan.id === value;
 
@@ -202,10 +202,10 @@ export default function SignUpScreen() {
                     <Pressable
                       key={plan.id}
                       onPress={() => onChange(plan.id)}
-                      accessibilityRole="radio"
-                      accessibilityLabel={`${plan.name}, ${formatCurrency(plan.priceMonthlyCents)} per month`}
+                      role="radio"
+                      aria-label={`${plan.name}, ${formatCurrency(plan.priceMonthlyCents)} per month`}
                       accessibilityHint={plan.description}
-                      accessibilityState={{ selected }}
+                      aria-selected={selected}
                       style={{
                         minHeight: 56,
                         flexDirection: 'row',
@@ -263,9 +263,9 @@ export default function SignUpScreen() {
             <YStack gap={space[2]}>
               <Pressable
                 onPress={() => onChange(!value)}
-                accessibilityRole="checkbox"
-                accessibilityLabel="I agree to the community code of conduct and the safety rules for shop equipment"
-                accessibilityState={{ checked: Boolean(value) }}
+                role="checkbox"
+                aria-label="I agree to the community code of conduct and the safety rules for shop equipment"
+                aria-checked={Boolean(value)}
                 style={{ minHeight: 44 }}
               >
                 <XStack gap={space[3]} alignItems="flex-start" paddingVertical={space[2]}>
@@ -296,7 +296,7 @@ export default function SignUpScreen() {
               </Pressable>
 
               {errors.agree?.message ? (
-                <View accessibilityLiveRegion="assertive">
+                <View aria-live="assertive">
                   <Text variant="caption" tone="error">
                     {errors.agree.message}
                   </Text>

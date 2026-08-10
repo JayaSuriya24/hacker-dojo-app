@@ -51,8 +51,8 @@ function CheckinPattern({ code }: { code: string }) {
   return (
     <View
       accessible
-      accessibilityRole="image"
-      accessibilityLabel={`Check-in code ${code.split('').join(' ')}`}
+      role="img"
+      aria-label={`Check-in code ${code.split('').join(' ')}`}
       style={{
         width: 196,
         height: 196,

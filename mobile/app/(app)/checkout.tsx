@@ -120,8 +120,8 @@ export default function CheckoutSheet() {
       <YStack gap={space[5]}>
         {error ? (
           <View
-            accessibilityLiveRegion="assertive"
-            accessibilityRole="alert"
+            aria-live="assertive"
+            role="alert"
             style={{
               backgroundColor: palette.errorTint,
               borderWidth: 1,

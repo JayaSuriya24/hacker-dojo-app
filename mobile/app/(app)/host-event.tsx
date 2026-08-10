@@ -124,8 +124,8 @@ export default function HostEventSheet() {
       <YStack gap={space[5]}>
         {formError ? (
           <View
-            accessibilityLiveRegion="assertive"
-            accessibilityRole="alert"
+            aria-live="assertive"
+            role="alert"
             style={{
               backgroundColor: palette.errorTint,
               borderWidth: 1,
@@ -236,7 +236,7 @@ export default function HostEventSheet() {
                 ))}
               </XStack>
               {errors.preferredRoom?.message ? (
-                <View accessibilityLiveRegion="assertive">
+                <View aria-live="assertive">
                   <Text variant="caption" tone="error">
                     {errors.preferredRoom.message}
                   </Text>

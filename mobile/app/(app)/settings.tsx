@@ -155,7 +155,7 @@ export default function SettingsScreen() {
               </XStack>
 
               {photoError ? (
-                <View accessibilityLiveRegion="assertive" accessibilityRole="alert">
+                <View aria-live="assertive" role="alert">
                   <Text variant="caption" tone="error">
                     {photoError}
                   </Text>
@@ -169,7 +169,7 @@ export default function SettingsScreen() {
                   loading={avatar.isPending}
                   disabled={avatar.isPending || removeAvatar.isPending}
                   onPress={() => void changePhoto()}
-                  accessibilityLabel="Change your profile photo"
+                  aria-label="Change your profile photo"
                 >
                   {me.avatarUrl ? 'Change photo' : 'Add a photo'}
                 </Button>
@@ -180,7 +180,7 @@ export default function SettingsScreen() {
                     loading={removeAvatar.isPending}
                     disabled={avatar.isPending || removeAvatar.isPending}
                     onPress={() => removeAvatar.mutate()}
-                    accessibilityLabel="Remove your profile photo"
+                    aria-label="Remove your profile photo"
                   >
                     Remove
                   </Button>
@@ -199,7 +199,7 @@ export default function SettingsScreen() {
             {/* ---- Appearance --------------------------------------------- */}
             <Section title="Appearance">
               <Segmented
-                accessibilityLabel="App appearance"
+                aria-label="App appearance"
                 options={[
                   { value: 'system', label: 'System' },
                   { value: 'light', label: 'Light' },

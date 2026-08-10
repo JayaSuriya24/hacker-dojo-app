@@ -170,8 +170,8 @@ export default function BookingSheet() {
       <YStack gap={space[6]}>
         {error ? (
           <View
-            accessibilityLiveRegion="assertive"
-            accessibilityRole="alert"
+            aria-live="assertive"
+            role="alert"
             style={{
               backgroundColor: palette.errorTint,
               borderWidth: 1,
@@ -206,13 +206,13 @@ export default function BookingSheet() {
                     setDayKey(day.key);
                     setStartsAt(null);
                   }}
-                  accessibilityRole="button"
-                  accessibilityLabel={day.date.toLocaleDateString(undefined, {
+                  role="button"
+                  aria-label={day.date.toLocaleDateString(undefined, {
                     weekday: 'long',
                     month: 'long',
                     day: 'numeric',
                   })}
-                  accessibilityState={{ selected }}
+                  aria-selected={selected}
                   style={{
                     minWidth: 52,
                     minHeight: 56,
@@ -255,9 +255,10 @@ export default function BookingSheet() {
                     key={slot.startsAt}
                     onPress={() => slot.available && setStartsAt(slot.startsAt)}
                     disabled={!slot.available}
-                    accessibilityRole="button"
-                    accessibilityLabel={`${slot.label}${slot.available ? '' : ', unavailable'}`}
-                    accessibilityState={{ selected, disabled: !slot.available }}
+                    role="button"
+                    aria-label={`${slot.label}${slot.available ? '' : ', unavailable'}`}
+                    aria-selected={selected}
+                    aria-disabled={!slot.available}
                     style={{
                       width: '23%',
                       minHeight: 44,
@@ -308,17 +309,12 @@ export default function BookingSheet() {
               size="sm"
               haptic="none"
               disabled={hours <= minHours}
-              accessibilityLabel="Decrease duration"
+              aria-label="Decrease duration"
               onPress={() => setHours((current) => Math.max(minHours, current - 1))}
             >
               −
             </Button>
-            <Text
-              variant="mono"
-              minWidth={40}
-              textAlign="center"
-              accessibilityLabel={`${hours} hours`}
-            >
+            <Text variant="mono" minWidth={40} textAlign="center" aria-label={`${hours} hours`}>
               {hours}h
             </Text>
             <Button
@@ -326,7 +322,7 @@ export default function BookingSheet() {
               size="sm"
               haptic="none"
               disabled={hours >= maxHours}
-              accessibilityLabel="Increase duration"
+              aria-label="Increase duration"
               onPress={() => setHours((current) => Math.min(maxHours, current + 1))}
             >
               +
@@ -351,9 +347,9 @@ export default function BookingSheet() {
                     current.map((value, position) => (position === index ? !value : value)),
                   )
                 }
-                accessibilityRole="checkbox"
-                accessibilityLabel={item}
-                accessibilityState={{ checked }}
+                role="checkbox"
+                aria-label={item}
+                aria-checked={checked}
               >
                 <Card
                   padded="tight"

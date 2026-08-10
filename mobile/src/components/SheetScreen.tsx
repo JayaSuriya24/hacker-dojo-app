@@ -47,7 +47,7 @@ export function SheetScreen({
       >
         <YStack gap={space[2]} marginBottom={space[5]}>
           {eyebrow ? <Text variant="eyebrow">{eyebrow}</Text> : null}
-          <Text variant="heading" accessibilityRole="header">
+          <Text variant="heading" role="heading">
             {title}
           </Text>
         </YStack>

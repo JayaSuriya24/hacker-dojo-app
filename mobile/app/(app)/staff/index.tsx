@@ -93,12 +93,7 @@ function StatCard({
   if (!onPress) return content;
 
   return (
-    <Pressable
-      onPress={onPress}
-      style={{ flex: 1 }}
-      accessibilityRole="button"
-      accessibilityLabel={`${value} ${label}`}
-    >
+    <Pressable onPress={onPress} style={{ flex: 1 }} role="button" aria-label={`${value} ${label}`}>
       {content}
     </Pressable>
   );
@@ -221,7 +216,7 @@ export default function StaffDashboardScreen() {
 
         <Section title="Queue">
           <Segmented
-            accessibilityLabel="Filter the queue"
+            aria-label="Filter the queue"
             options={FILTERS}
             value={filter}
             onChange={setFilter}
@@ -271,7 +266,7 @@ export default function StaffDashboardScreen() {
                       <Button
                         size="sm"
                         onPress={() => router.push('/(app)/staff/documents')}
-                        accessibilityLabel={`Review ${item.summary}`}
+                        aria-label={`Review ${item.summary}`}
                       >
                         Review file
                       </Button>
@@ -286,7 +281,7 @@ export default function StaffDashboardScreen() {
                             fullWidth
                             disabled={pending}
                             onPress={() => decide(item, action.status)}
-                            accessibilityLabel={`${action.label} ${item.summary} for ${item.requesterName}`}
+                            aria-label={`${action.label} ${item.summary} for ${item.requesterName}`}
                           >
                             {action.label}
                           </Button>

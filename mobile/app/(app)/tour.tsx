@@ -101,8 +101,8 @@ export default function TourSheet() {
       <YStack gap={space[6]}>
         {error ? (
           <View
-            accessibilityLiveRegion="assertive"
-            accessibilityRole="alert"
+            aria-live="assertive"
+            role="alert"
             style={{
               backgroundColor: palette.errorTint,
               borderWidth: 1,
@@ -133,13 +133,13 @@ export default function TourSheet() {
                 <Pressable
                   key={day.key}
                   onPress={() => setDayIndex(index)}
-                  accessibilityRole="button"
-                  accessibilityLabel={day.date.toLocaleDateString(undefined, {
+                  role="button"
+                  aria-label={day.date.toLocaleDateString(undefined, {
                     weekday: 'long',
                     month: 'long',
                     day: 'numeric',
                   })}
-                  accessibilityState={{ selected }}
+                  aria-selected={selected}
                   style={{
                     minWidth: 52,
                     minHeight: 56,
@@ -174,9 +174,9 @@ export default function TourSheet() {
                 <Pressable
                   key={time.label}
                   onPress={() => setTimeIndex(index)}
-                  accessibilityRole="button"
-                  accessibilityLabel={time.label}
-                  accessibilityState={{ selected }}
+                  role="button"
+                  aria-label={time.label}
+                  aria-selected={selected}
                   style={{
                     width: '31.5%',
                     minHeight: 46,

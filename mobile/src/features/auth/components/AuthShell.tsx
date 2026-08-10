@@ -65,11 +65,7 @@ export function AuthShell({ heading, children }: { heading: string; children: Re
           paddingBottom={space[16]}
         >
           {/* Decorative torii watermark, hidden from assistive tech. */}
-          <View
-            style={{ position: 'absolute', top: 90, left: -24, opacity: 0.2 }}
-            accessibilityElementsHidden
-            importantForAccessibility="no-hide-descendants"
-          >
+          <View style={{ position: 'absolute', top: 90, left: -24, opacity: 0.2 }} aria-hidden>
             <Svg width={441} height={240} viewBox="0 0 441 240" fill="none">
               <Path
                 d="M0 0h441M36 36h369M86 36v240M355 36v240M86 80h269"
@@ -81,7 +77,7 @@ export function AuthShell({ heading, children }: { heading: string; children: Re
           </View>
 
           <YStack gap={space[2]} paddingTop={insets.top}>
-            <Text variant="hero" tone="onAccent" accessibilityRole="header">
+            <Text variant="hero" tone="onAccent" role="heading">
               HACKER DOJO
             </Text>
             <Text variant="eyebrow" color="rgba(255,255,255,0.8)">

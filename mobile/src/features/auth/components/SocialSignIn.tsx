@@ -63,7 +63,7 @@ export function SocialSignIn({ onError }: { onError: (message: string) => void }
 
   return (
     <YStack gap={space[4]}>
-      <XStack alignItems="center" gap={space[4]} accessibilityElementsHidden>
+      <XStack alignItems="center" gap={space[4]} aria-hidden>
         <View style={{ flex: 1, height: 1, backgroundColor: palette.border }} />
         <Text variant="eyebrow" tone="subtle">
           or continue with
@@ -93,7 +93,7 @@ export function SocialSignIn({ onError }: { onError: (message: string) => void }
         icon={<GoogleMark />}
         loading={busy === 'google'}
         onPress={() => void run('google')}
-        accessibilityLabel="Continue with Google"
+        aria-label="Continue with Google"
       >
         Continue with Google
       </Button>

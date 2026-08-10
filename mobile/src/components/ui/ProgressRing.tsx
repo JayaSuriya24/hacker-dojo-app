@@ -67,9 +67,12 @@ export function ProgressRing({
   return (
     <View
       accessible
-      accessibilityRole="progressbar"
-      accessibilityLabel={label ?? 'Live occupancy'}
-      accessibilityValue={{ min: 0, max: total, now: value, text: `${value} of ${total}` }}
+      role="progressbar"
+      aria-label={label ?? 'Live occupancy'}
+      aria-valuemin={0}
+      aria-valuemax={total}
+      aria-valuenow={value}
+      aria-valuetext={`${value} of ${total}`}
       style={{ width: size, height: size }}
     >
       <Svg width={size} height={size}>
@@ -104,9 +107,9 @@ export function ProgressRing({
         bottom={0}
         alignItems="center"
         justifyContent="center"
-        // The ring's own accessibilityValue already reads the numbers; hiding
+        // The ring's own aria-value* already reads the numbers; hiding
         // the inner text stops it being announced a second time.
-        accessibilityElementsHidden
+        aria-hidden
       >
         <Text variant="monoLarge" maxFontSizeMultiplier={1.1}>
           {value}

@@ -108,8 +108,8 @@ export default function DojoScreen() {
             <Pressable
               key={program.id}
               onPress={() => router.push(`/(app)/program/${program.id}`)}
-              accessibilityRole="button"
-              accessibilityLabel={`${program.name}. ${program.meta}`}
+              role="button"
+              aria-label={`${program.name}. ${program.meta}`}
               accessibilityHint="Opens the program details"
             >
               <Card interactive flexDirection="row" alignItems="center" gap={space[4]}>
@@ -134,7 +134,7 @@ export default function DojoScreen() {
         action={
           <View style={{ width: 168 }}>
             <Segmented
-              accessibilityLabel="Billing period"
+              aria-label="Billing period"
               options={[
                 { value: 'mo', label: 'Monthly' },
                 { value: 'yr', label: 'Annual' },
@@ -247,7 +247,7 @@ export default function DojoScreen() {
           <Card>
             {/* `polite` announces the new quote when the member advances the
                 carousel, without interrupting whatever is being read. */}
-            <View accessibilityLiveRegion="polite">
+            <View aria-live="polite">
               <Text variant="subtitle" lineHeight={22}>
                 “{testimonial.quote}”
               </Text>
@@ -272,7 +272,7 @@ export default function DojoScreen() {
                   variant="secondary"
                   size="sm"
                   haptic="none"
-                  accessibilityLabel="Previous quote"
+                  aria-label="Previous quote"
                   onPress={() =>
                     setTestimonialIndex(
                       (index) => (index - 1 + testimonials.length) % testimonials.length,
@@ -285,7 +285,7 @@ export default function DojoScreen() {
                   variant="secondary"
                   size="sm"
                   haptic="none"
-                  accessibilityLabel="Next quote"
+                  aria-label="Next quote"
                   onPress={() => setTestimonialIndex((index) => (index + 1) % testimonials.length)}
                 >
                   ›
@@ -361,8 +361,8 @@ export default function DojoScreen() {
       <Section title="Profile & settings">
         <Pressable
           onPress={() => router.push('/(app)/settings')}
-          accessibilityRole="button"
-          accessibilityLabel="Profile and settings"
+          role="button"
+          aria-label="Profile and settings"
         >
           <Card interactive flexDirection="row" alignItems="center" gap={space[4]}>
             {me ? (

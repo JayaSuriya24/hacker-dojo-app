@@ -100,7 +100,7 @@ export function ScreenHeader({
         {eyebrow ? <Text variant="eyebrow">{eyebrow}</Text> : null}
         {/* `header` role puts this in the screen-reader rotor, so a member can
             jump between sections instead of swiping through every card. */}
-        <Text variant="display" accessibilityRole="header">
+        <Text variant="display" role="heading">
           {title}
         </Text>
       </YStack>
@@ -125,7 +125,7 @@ export function Section({
     <YStack gap={gap} marginTop={space[6]}>
       {title ? (
         <XStack alignItems="center" gap={space[3]}>
-          <Text variant="eyebrow" accessibilityRole="header">
+          <Text variant="eyebrow" role="heading">
             {title}
           </Text>
           {action ? <YStack marginLeft="auto">{action}</YStack> : null}

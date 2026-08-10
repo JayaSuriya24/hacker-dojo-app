@@ -12,9 +12,9 @@ import { HIT_SLOP_MIN, radius, space } from '~/theme/tokens';
  * an `error` string, and owns none of that state itself.
  *
  * The accessibility work here is the part that is easy to skip and expensive to
- * retrofit: the label is bound to the input via `accessibilityLabel`, the error
+ * retrofit: the label is bound to the input via `aria-label`, the error
  * is announced through `accessibilityHint` and marked with
- * `accessibilityLiveRegion` so TalkBack reads it when it appears, and the
+ * `aria-live` so TalkBack reads it when it appears, and the
  * invalid state is exposed to the OS rather than being conveyed by a red border
  * alone.
  */
@@ -65,7 +65,7 @@ export const TextField = forwardRef<TextInput, TextFieldProps>(function TextFiel
 
         <TextInput
           ref={ref}
-          accessibilityLabel={label}
+          aria-label={label}
           accessibilityHint={error ?? hint}
           // Screen readers announce "invalid entry" instead of the member
           // discovering the red border only by looking.
@@ -95,7 +95,7 @@ export const TextField = forwardRef<TextInput, TextFieldProps>(function TextFiel
       {error ? (
         // `assertive` interrupts to read a validation failure the moment it
         // appears; a polite region would queue behind whatever is being read.
-        <View accessibilityLiveRegion="assertive">
+        <View aria-live="assertive">
           <Text variant="caption" tone="error">
             {error}
           </Text>
@@ -116,8 +116,8 @@ export function PasswordToggle({ visible, onToggle }: { visible: boolean; onTogg
   return (
     <Pressable
       onPress={onToggle}
-      accessibilityRole="button"
-      accessibilityLabel={visible ? 'Hide password' : 'Show password'}
+      role="button"
+      aria-label={visible ? 'Hide password' : 'Show password'}
       hitSlop={8}
       style={{ minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' }}
     >

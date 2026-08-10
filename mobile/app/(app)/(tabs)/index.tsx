@@ -89,7 +89,7 @@ export default function HomeScreen() {
       <XStack alignItems="flex-start" gap={space[4]}>
         <YStack flex={1} gap={space[1]}>
           <Text variant="eyebrow">{dojo.addressLine1}</Text>
-          <Text variant="display" accessibilityRole="header">
+          <Text variant="display" role="heading">
             {isMember && me ? `${greetingFor()}, ${firstNameOf(me.name)}` : 'Welcome to the Dojo'}
           </Text>
           <Text variant="small" tone="subtle">
@@ -173,9 +173,9 @@ export default function HomeScreen() {
             <Pressable
               onPress={() => void copyWifi()}
               disabled={!settings.data?.wifiPassword}
-              accessibilityRole="button"
-              accessibilityLabel="Copy the Wi-Fi password"
-              accessibilityState={{ disabled: !settings.data?.wifiPassword }}
+              role="button"
+              aria-label="Copy the Wi-Fi password"
+              aria-disabled={!settings.data?.wifiPassword}
               accessibilityHint={
                 settings.data?.wifiPassword
                   ? wifiCopied
@@ -215,8 +215,8 @@ export default function HomeScreen() {
           <YStack flex={1} minWidth="100%">
             <Pressable
               onPress={() => router.push('/(app)/(tabs)/book')}
-              accessibilityRole="button"
-              accessibilityLabel={`Meeting rooms, ${freeRooms} of ${totalRooms} free now`}
+              role="button"
+              aria-label={`Meeting rooms, ${freeRooms} of ${totalRooms} free now`}
             >
               <Card padded="tight" flexDirection="row" alignItems="center" gap={space[4]}>
                 <YStack flex={1} gap={space[1]}>
@@ -242,8 +242,8 @@ export default function HomeScreen() {
         action={
           <Pressable
             onPress={() => router.push('/(app)/(tabs)/events')}
-            accessibilityRole="link"
-            accessibilityLabel="See all events"
+            role="link"
+            aria-label="See all events"
             hitSlop={8}
           >
             <Text variant="small" tone="muted">
@@ -267,8 +267,8 @@ export default function HomeScreen() {
               <Pressable
                 key={event.id}
                 onPress={() => router.push(`/(app)/event/${event.id}`)}
-                accessibilityRole="button"
-                accessibilityLabel={`${event.title}, ${formatTime(event.startsAt)} in ${event.roomName}`}
+                role="button"
+                aria-label={`${event.title}, ${formatTime(event.startsAt)} in ${event.roomName}`}
               >
                 <Card width={212} padded="tight" gap={space[2]}>
                   <Text variant="mono" tone="accent">
