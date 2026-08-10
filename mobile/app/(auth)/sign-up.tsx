@@ -33,6 +33,8 @@ export default function SignUpScreen() {
   const { data: plans } = usePlans();
   const [formError, setFormError] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
+  /** Set once the account exists but is waiting on an emailed confirmation. */
+  const [confirmationSentTo, setConfirmationSentTo] = useState<string | null>(null);
 
   const selectablePlans = (plans ?? []).filter((plan) => !plan.isAddon);
 
@@ -62,13 +64,21 @@ export default function SignUpScreen() {
   const onSubmit = handleSubmit(async (values) => {
     setFormError(null);
     try {
-      await authService.signUp({
+      const { needsEmailConfirmation } = await authService.signUp({
         email: values.email,
         password: values.password,
         fullName: values.fullName,
       });
-      // Straight to checkout with the chosen plan. Supabase may still require
-      // email confirmation; the checkout screen handles that state.
+
+      // Without a session there is nothing to navigate to — `(app)` is behind
+      // the auth guard, so routing on would bounce straight back here and the
+      // member would see no outcome at all. Say what happened instead.
+      if (needsEmailConfirmation) {
+        setConfirmationSentTo(values.email.trim().toLowerCase());
+        return;
+      }
+
+      // Confirmed already (confirmations off): straight to checkout.
       router.replace({
         pathname: '/(app)/checkout',
         params: { planId: values.planId, period: 'month' },
@@ -77,6 +87,48 @@ export default function SignUpScreen() {
       setFormError(userMessage(error));
     }
   });
+
+  // The account exists; it just cannot sign in until the emailed link is
+  // followed. Replacing the form rather than annotating it is deliberate —
+  // leaving the fields on screen invites a second submission, which would only
+  // return "that email already has an account".
+  if (confirmationSentTo) {
+    return (
+      <AuthShell heading="Check your email">
+        <YStack gap={space[5]} aria-live="polite" role="alert">
+          <View
+            style={{
+              // No `okTint` in the palette, so the surface carries the panel and
+              // `ok` carries the meaning — rather than inventing a colour that
+              // sits outside the ramp.
+              backgroundColor: palette.surfaceAlt,
+              borderWidth: 1,
+              borderColor: palette.ok,
+              borderRadius: radius.md,
+              padding: space[4],
+              gap: space[2],
+            }}
+          >
+            <Text variant="subtitle" tone="ok">
+              Account created
+            </Text>
+            <Text variant="small" tone="subtle">
+              We sent a confirmation link to {confirmationSentTo}. Open it to activate your account,
+              then sign in to choose how you pay.
+            </Text>
+          </View>
+
+          <Text variant="caption" tone="subtle">
+            No email after a minute or two? Check your spam folder — the link expires in 24 hours.
+          </Text>
+
+          <Button variant="primary" onPress={() => router.replace('/(auth)/sign-in')}>
+            Go to sign in
+          </Button>
+        </YStack>
+      </AuthShell>
+    );
+  }
 
   return (
     <AuthShell heading="Create your membership">

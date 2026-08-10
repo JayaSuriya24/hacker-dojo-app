@@ -27,7 +27,17 @@ file_size_limit = "20MiB"
 [auth]
 enabled = true
 site_url = "hackerdojo://"
-additional_redirect_urls = ["hackerdojo://auth/callback", "https://app.hackerdojo.org/auth/callback"]
+# Supabase silently falls back to `site_url` when a requested `redirect_to` is
+# not listed here. On web the app asks for its own origin, so without the
+# localhost entries a confirmation email pointed at `hackerdojo://` — a custom
+# scheme a browser cannot open, which is why the link dead-ended.
+# 127.0.0.1 is a distinct origin from localhost and needs its own entry.
+additional_redirect_urls = [
+  "hackerdojo://auth/callback",
+  "https://app.hackerdojo.org/auth/callback",
+  "http://localhost:8081/auth/callback",
+  "http://127.0.0.1:8081/auth/callback",
+]
 jwt_expiry = 3600
 enable_refresh_token_rotation = true
 refresh_token_reuse_interval = 10

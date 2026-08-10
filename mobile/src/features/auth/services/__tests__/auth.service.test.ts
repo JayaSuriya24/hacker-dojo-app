@@ -136,6 +136,28 @@ describe('auth error translation', () => {
     expect(error.message).toBe('We could not create your account. Try again.');
   });
 
+  it('reports that a new account is waiting on an emailed confirmation', async () => {
+    // Supabase signals this by returning a user with NO session: the account
+    // exists but cannot act yet. The screen needs the distinction, because
+    // routing on without a session lands on a guarded route that bounces.
+    auth.signUp.mockResolvedValue({ data: { user: { id: 'u1' }, session: null }, error: null });
+
+    await expect(
+      authService.signUp({ email: 'a@b.com', password: 'DojoTest123', fullName: 'A B' }),
+    ).resolves.toEqual({ needsEmailConfirmation: true });
+  });
+
+  it('reports a usable session when confirmation is switched off', async () => {
+    auth.signUp.mockResolvedValue({
+      data: { user: { id: 'u1' }, session: { access_token: 't' } },
+      error: null,
+    });
+
+    await expect(
+      authService.signUp({ email: 'a@b.com', password: 'DojoTest123', fullName: 'A B' }),
+    ).resolves.toEqual({ needsEmailConfirmation: false });
+  });
+
   it('stays silent about whether a reset address is registered', async () => {
     // Enumeration again: this one resolves rather than throwing, so the screen
     // shows the same "if that address is registered" copy either way.

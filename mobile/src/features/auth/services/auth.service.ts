@@ -246,8 +246,22 @@ export const authService = {
     if (error) throw toApiError(error, 'We could not sign you in. Try again.');
   },
 
-  async signUp(input: { email: string; password: string; fullName: string }): Promise<void> {
-    const { error } = await supabase.auth.signUp({
+  /**
+   * Create an account.
+   *
+   * Returns whether the member still has to confirm their email, which is the
+   * difference between "you are signed in" and "go and check your inbox".
+   * Supabase signals it by returning a user with NO session: the account exists
+   * but cannot act yet. Discarding that distinction is how a successful signup
+   * ended up navigating to a screen the auth guard immediately bounced, leaving
+   * nothing on screen at all.
+   */
+  async signUp(input: {
+    email: string;
+    password: string;
+    fullName: string;
+  }): Promise<{ needsEmailConfirmation: boolean }> {
+    const { data, error } = await supabase.auth.signUp({
       email: input.email.trim().toLowerCase(),
       password: input.password,
       options: {
@@ -258,6 +272,7 @@ export const authService = {
       },
     });
     if (error) throw toApiError(error, 'We could not create your account. Try again.');
+    return { needsEmailConfirmation: data.session === null };
   },
 
   /** Email a one-time code. `shouldCreateUser: false` keeps this a sign-in path. */
