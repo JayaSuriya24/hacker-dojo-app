@@ -37,18 +37,39 @@ export function ToriiMark({ size = 24, color }: { size?: number; color: string }
   );
 }
 
+/**
+ * The widest the auth column is allowed to get.
+ *
+ * These screens are a phone layout — a full-bleed gradient hero with a sheet
+ * riding up over it. Stretched across a desktop browser that reads as broken:
+ * the torii watermark strands in one corner, the hero's 44px overlap turns into
+ * a wide seam, and a single input runs the width of the window.
+ *
+ * Bounding the column reproduces the intended composition on any viewport, and
+ * costs a phone nothing — no handset is wider than this, so the constraint is
+ * inert where the design already fits.
+ */
+const AUTH_COLUMN_MAX_WIDTH = 460;
+
 export function AuthShell({ heading, children }: { heading: string; children: ReactNode }) {
   const insets = useSafeAreaInsets();
   const palette = usePalette();
 
   return (
     <KeyboardAvoidingView
-      style={{ flex: 1 }}
+      style={{ flex: 1, backgroundColor: palette.background }}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       <ScrollView
         style={{ flex: 1 }}
-        contentContainerStyle={{ flexGrow: 1 }}
+        contentContainerStyle={{
+          flexGrow: 1,
+          // Centres the column itself rather than its contents, so the hero and
+          // the sheet stay aligned to each other at every width.
+          width: '100%',
+          maxWidth: AUTH_COLUMN_MAX_WIDTH,
+          alignSelf: 'center',
+        }}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
         // Dismiss the keyboard on drag — the standard gesture on both platforms
@@ -76,7 +97,13 @@ export function AuthShell({ heading, children }: { heading: string; children: Re
             </Svg>
           </View>
 
-          <YStack gap={space[2]} paddingTop={insets.top}>
+          {/*
+            Above the watermark. React Native paints siblings in order, so this
+            needed nothing on a phone — but CSS paints positioned elements above
+            static ones regardless of order, and the absolutely-positioned torii
+            was covering the wordmark on web.
+          */}
+          <YStack gap={space[2]} paddingTop={insets.top} zIndex={1}>
             <Text variant="hero" tone="onAccent" role="heading">
               HACKER DOJO
             </Text>
@@ -91,7 +118,12 @@ export function AuthShell({ heading, children }: { heading: string; children: Re
 
         <YStack
           flex={1}
+          // Rides up over the hero. Same CSS paint-order problem as above: the
+          // gradient is positioned and this sheet is not, so without the
+          // z-index the overlapped 44px — which is where the first field's
+          // label sits — disappeared underneath it on web.
           marginTop={-44}
+          zIndex={1}
           backgroundColor="$background"
           borderTopLeftRadius={radius.xl}
           borderTopRightRadius={radius.xl}
