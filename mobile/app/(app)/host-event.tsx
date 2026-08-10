@@ -56,7 +56,10 @@ export default function HostEventSheet() {
     formState: { errors, isSubmitting, isValid },
   } = useForm<HostEventValues>({
     resolver: zodResolver(hostEventSchema),
-    mode: 'onBlur',
+    // See the note in sign-up: `category` and `preferredRoom` are chip pickers
+    // rather than inputs, so they never blur and `onBlur` would leave `isValid`
+    // stale after either is chosen.
+    mode: 'onTouched',
     defaultValues: {
       title: '',
       category: 'Community',

@@ -43,7 +43,16 @@ export default function SignUpScreen() {
     formState: { errors, isSubmitting, isValid },
   } = useForm<SignUpValues>({
     resolver: zodResolver(signUpSchema),
-    mode: 'onBlur',
+    // `onTouched`, not `onBlur`. Both hold errors back until a field has been
+    // left once — nobody should be told their email is invalid while they are
+    // still typing it — but `onBlur` recomputes `isValid` ONLY on a blur event,
+    // and two of the five fields here can never emit one: the plan is a radio
+    // row and the code-of-conduct is a checkbox, both `Pressable`s. Choosing a
+    // plan and ticking the box set their values and left `isValid` false, so a
+    // fully completed form kept a disabled button with nothing to explain it.
+    // `onTouched` re-validates on change after the first blur, which covers
+    // controls that only ever change.
+    mode: 'onTouched',
     defaultValues: { fullName: '', email: '', password: '', planId: 'standard', agree: false },
   });
 
