@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import { Alert, Linking, View } from 'react-native';
+import { Linking, Platform, View } from 'react-native';
 import { router, Stack } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { XStack, YStack } from 'tamagui';
@@ -29,6 +29,7 @@ import { useBillingPortal } from '~/features/payments/hooks/usePayments';
 import { useIsStaff } from '~/features/staff/hooks/useStaff';
 import { useDoorHistory } from '~/features/access/hooks/useAccess';
 import { userMessage } from '~/services/api/errors';
+import { confirm } from '~/services/confirm';
 import { authService } from '~/features/auth/services/auth.service';
 import { usePreferencesStore } from '~/store/preferences.store';
 import { usePalette } from '~/providers/ThemeProvider';
@@ -75,21 +76,23 @@ export default function SettingsScreen() {
     }
   }, [avatar]);
 
-  const confirmSignOut = () => {
-    Alert.alert('Sign out?', 'You will need your password or a one-time code to sign back in.', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Sign out',
-        style: 'destructive',
-        onPress: () => {
-          setSigningOut(true);
-          void authService.signOut().finally(() => {
-            setSigningOut(false);
-            router.replace('/(auth)/sign-in');
-          });
-        },
-      },
-    ]);
+  const confirmSignOut = async () => {
+    const confirmed = await confirm({
+      title: 'Sign out?',
+      message: 'You will need your password or a one-time code to sign back in.',
+      confirmLabel: 'Sign out',
+      destructive: true,
+    });
+    if (!confirmed) return;
+
+    setSigningOut(true);
+    // Route away regardless: a failed token revocation still clears the local
+    // session, and leaving someone stranded on a signed-in screen they asked to
+    // leave is worse than a server-side session that expires on its own.
+    void authService.signOut().finally(() => {
+      setSigningOut(false);
+      router.replace('/(auth)/sign-in');
+    });
   };
 
   const toggleNotification = async (
@@ -101,14 +104,16 @@ export default function SettingsScreen() {
     if (value && !notifications.data?.hasPushToken) {
       const granted = await registerPush();
       if (!granted) {
-        Alert.alert(
-          'Notifications are off',
-          'Turn them on for Hacker Dojo in your device settings to get reminders.',
-          [
-            { text: 'Not now', style: 'cancel' },
-            { text: 'Open settings', onPress: () => void Linking.openSettings() },
-          ],
-        );
+        const openSettings = await confirm({
+          title: 'Notifications are off',
+          message: 'Turn them on for Hacker Dojo in your device settings to get reminders.',
+          confirmLabel: 'Open settings',
+          cancelLabel: 'Not now',
+        });
+        // `Linking.openSettings` does not exist on react-native-web — calling it
+        // there is a TypeError, not a no-op. A browser has no app settings pane
+        // to open anyway; the confirm above is the whole message on web.
+        if (openSettings && Platform.OS !== 'web') void Linking.openSettings();
         return;
       }
     }
@@ -379,7 +384,7 @@ export default function SettingsScreen() {
                   variant="destructive"
                   fullWidth
                   loading={signingOut}
-                  onPress={confirmSignOut}
+                  onPress={() => void confirmSignOut()}
                 >
                   Sign out
                 </Button>
