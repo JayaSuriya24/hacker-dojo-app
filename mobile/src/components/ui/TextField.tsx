@@ -4,6 +4,7 @@ import { XStack, YStack } from 'tamagui';
 import { Text } from './Text';
 import { usePalette } from '~/providers/ThemeProvider';
 import { HIT_SLOP_MIN, radius, space } from '~/theme/tokens';
+import { focusRing, noFocusRing } from '~/theme/focus';
 
 /**
  * The form field.
@@ -55,6 +56,16 @@ export const TextField = forwardRef<TextInput, TextFieldProps>(function TextFiel
         borderRadius={radius.md}
         paddingHorizontal={space[4]}
         minHeight={HIT_SLOP_MIN}
+        // The ring belongs on the frame, not on the inner input. The browser
+        // draws its own outline around the `<input>`, which sits inset from
+        // this border by the icon and the horizontal padding — so the default
+        // ring landed offset and square-cornered inside a rounded field. It is
+        // suppressed below and reissued here, where it traces the field itself.
+        //
+        // It also has to be an outline rather than a border colour: in the
+        // error state the border stays red, so a colour swap alone would leave
+        // an invalid field with no visible focus at all.
+        style={focused ? focusRing(palette) : undefined}
       >
         {icon}
         {prefix ? (
@@ -85,6 +96,8 @@ export const TextField = forwardRef<TextInput, TextFieldProps>(function TextFiel
             paddingVertical: space[4],
             color: palette.text,
             fontSize: 15,
+            // The frame above draws the ring; this clears the browser's own.
+            ...noFocusRing,
           }}
           {...inputProps}
         />
