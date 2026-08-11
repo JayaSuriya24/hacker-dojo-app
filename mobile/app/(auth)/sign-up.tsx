@@ -14,27 +14,30 @@ import {
   strengthHint,
   type SignUpValues,
 } from '~/features/auth/validation/auth.schemas';
+import { usePlans } from '~/features/profile/hooks/useProfile';
 import { Button, PasswordToggle, Text, TextField } from '~/components/ui';
 import { usePalette } from '~/providers/ThemeProvider';
 import { userMessage } from '~/services/api/errors';
+import { formatCurrency } from '~/utils/format';
 import { radius, space } from '~/theme/tokens';
 
 /**
  * Create an account.
  *
- * An account only — no plan, and no card. Choosing how to pay happens later,
- * from the pricing table on the Dojo tab, where the plans can be read properly
- * rather than skimmed as three radio rows in the middle of a signup form.
- *
- * That order is also the correct one technically: a membership needs an account
- * to attach to, and this form stays free of any payment surface.
+ * The plan chosen here is recorded as an intent, not a purchase — no card is
+ * taken on this screen. Payment happens after the account exists, through
+ * Stripe's own sheet, which is both the correct order (an account to attach the
+ * membership to) and what keeps this form free of any payment surface.
  */
 export default function SignUpScreen() {
   const palette = usePalette();
+  const { data: plans } = usePlans();
   const [formError, setFormError] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
   /** Set once the account exists but is waiting on an emailed confirmation. */
   const [confirmationSentTo, setConfirmationSentTo] = useState<string | null>(null);
+
+  const selectablePlans = (plans ?? []).filter((plan) => !plan.isAddon);
 
   const {
     control,
@@ -46,13 +49,14 @@ export default function SignUpScreen() {
     // `onTouched`, not `onBlur`. Both hold errors back until a field has been
     // left once — nobody should be told their email is invalid while they are
     // still typing it — but `onBlur` recomputes `isValid` ONLY on a blur event,
-    // and the code-of-conduct checkbox is a `Pressable` that can never emit
-    // one. Ticking it set the value and left `isValid` false, so a completed
-    // form kept a disabled button with nothing to explain it. `onTouched`
-    // re-validates on change after the first blur, which covers controls that
-    // only ever change.
+    // and two of the five fields here can never emit one: the plan is a radio
+    // row and the code-of-conduct is a checkbox, both `Pressable`s. Choosing a
+    // plan and ticking the box set their values and left `isValid` false, so a
+    // fully completed form kept a disabled button with nothing to explain it.
+    // `onTouched` re-validates on change after the first blur, which covers
+    // controls that only ever change.
     mode: 'onTouched',
-    defaultValues: { fullName: '', email: '', password: '', agree: false },
+    defaultValues: { fullName: '', email: '', password: '', planId: 'standard', agree: false },
   });
 
   const password = watch('password') ?? '';
@@ -75,11 +79,17 @@ export default function SignUpScreen() {
         return;
       }
 
-      // Confirmed already (confirmations off): into the app. Not to checkout —
-      // no plan has been chosen at this point, and sending someone to a payment
-      // screen for a membership they have not picked is the wrong first move.
-      // Plans live on the Dojo tab, where they can be read before being bought.
-      router.replace('/(app)/(tabs)');
+      // Confirmed already (confirmations off). "Decide later" leaves `planId`
+      // empty, and there is nothing to check out for a plan nobody picked — so
+      // that lands in the app, where the Dojo tab's pricing table is waiting.
+      if (values.planId) {
+        router.replace({
+          pathname: '/(app)/checkout',
+          params: { planId: values.planId, period: 'month' },
+        });
+      } else {
+        router.replace('/(app)/(tabs)');
+      }
     } catch (error) {
       setFormError(userMessage(error));
     }
@@ -240,6 +250,133 @@ export default function SignUpScreen() {
                 <Text variant="caption" tone="subtle">
                   {strengthHint(password)}
                 </Text>
+              </YStack>
+            </YStack>
+          )}
+        />
+
+        <Controller
+          control={control}
+          name="planId"
+          render={({ field: { onChange, value } }) => (
+            <YStack gap={space[3]}>
+              <YStack gap={space[1]}>
+                <Text variant="eyebrow" tone="subtle">
+                  Choose a plan
+                </Text>
+                <Text variant="caption" tone="subtle">
+                  Optional — you can join now and pick a plan whenever you are ready.
+                </Text>
+              </YStack>
+
+              <YStack gap={space[2]} role="radiogroup">
+                {selectablePlans.map((plan) => {
+                  const selected = plan.id === value;
+
+                  return (
+                    <Pressable
+                      key={plan.id}
+                      onPress={() => onChange(plan.id)}
+                      role="radio"
+                      aria-label={`${plan.name}, ${formatCurrency(plan.priceMonthlyCents)} per month`}
+                      accessibilityHint={plan.description}
+                      aria-selected={selected}
+                      style={{
+                        minHeight: 56,
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        gap: space[4],
+                        paddingHorizontal: space[4],
+                        paddingVertical: space[3],
+                        borderRadius: radius.md,
+                        borderWidth: 1,
+                        borderColor: selected ? palette.accent : palette.border,
+                        backgroundColor: selected ? palette.accentTint : palette.surfaceAlt,
+                      }}
+                    >
+                      <View
+                        style={{
+                          width: 19,
+                          height: 19,
+                          borderRadius: radius.pill,
+                          borderWidth: 1,
+                          borderColor: selected ? palette.accent : palette.border,
+                          backgroundColor: selected ? palette.accent : 'transparent',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                        }}
+                      >
+                        {selected ? (
+                          <Text variant="caption" tone="onAccent">
+                            ✓
+                          </Text>
+                        ) : null}
+                      </View>
+
+                      <YStack flex={1} gap={space[1]}>
+                        <Text variant="body">{plan.name}</Text>
+                        <Text variant="caption" tone="subtle">
+                          {plan.description}
+                        </Text>
+                      </YStack>
+
+                      <Text variant="mono" tone="accent">
+                        {formatCurrency(plan.priceMonthlyCents)}/mo
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+
+                {/*
+                  The way out of the purchase decision. Same row shape as the
+                  plans so it reads as one of the choices rather than a way to
+                  dismiss them, and no price because there is nothing to pay.
+                */}
+                <Pressable
+                  onPress={() => onChange('')}
+                  role="radio"
+                  aria-label="Decide later, no plan yet"
+                  accessibilityHint="Create your account now and choose a plan when you are ready."
+                  aria-selected={value === ''}
+                  style={{
+                    minHeight: 56,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: space[4],
+                    paddingHorizontal: space[4],
+                    paddingVertical: space[3],
+                    borderRadius: radius.md,
+                    borderWidth: 1,
+                    borderColor: value === '' ? palette.accent : palette.border,
+                    backgroundColor: value === '' ? palette.accentTint : palette.surfaceAlt,
+                  }}
+                >
+                  <View
+                    style={{
+                      width: 19,
+                      height: 19,
+                      borderRadius: radius.pill,
+                      borderWidth: 1,
+                      borderColor: value === '' ? palette.accent : palette.border,
+                      backgroundColor: value === '' ? palette.accent : 'transparent',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    {value === '' ? (
+                      <Text variant="caption" tone="onAccent">
+                        ✓
+                      </Text>
+                    ) : null}
+                  </View>
+
+                  <YStack flex={1} gap={space[1]}>
+                    <Text variant="body">Decide later</Text>
+                    <Text variant="caption" tone="subtle">
+                      Join now and pick a plan when you are ready.
+                    </Text>
+                  </YStack>
+                </Pressable>
               </YStack>
             </YStack>
           )}
