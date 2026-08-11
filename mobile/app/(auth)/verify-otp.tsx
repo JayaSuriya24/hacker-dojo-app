@@ -36,7 +36,10 @@ export default function VerifyOtpScreen() {
 
   const requestForm = useForm<OtpRequestValues>({
     resolver: zodResolver(otpRequestSchema),
-    mode: 'onBlur',
+    // See sign-in: `onBlur` leaves `isValid` stale until a field is left, and
+    // here the email is the only field — so the button stays disabled until the
+    // member taps somewhere idle. The channel switch cannot blur at all.
+    mode: 'onTouched',
     defaultValues: { channel: 'email', email: '', phone: '' },
   });
 

@@ -60,7 +60,13 @@ export default function SignInScreen() {
     formState: { errors, isSubmitting, isValid },
   } = useForm<SignInValues>({
     resolver: zodResolver(signInSchema),
-    mode: 'onBlur',
+    // `onTouched`, not `onBlur`. Under `onBlur`, `isValid` is recomputed only
+    // when a field is left — and the last field anyone fills is the password,
+    // which they leave by pressing Sign in. That press lands on a button still
+    // disabled from the validation run when the password was empty, so nothing
+    // happens and the form looks stuck. `onTouched` re-validates on change once
+    // a field has been touched, so the button enables as the password is typed.
+    mode: 'onTouched',
     defaultValues: { email: '', password: '', remember: true },
   });
 
@@ -232,15 +238,6 @@ export default function SignInScreen() {
           </Text>
           <Button variant="primary" fullWidth onPress={() => router.push('/(auth)/sign-up')}>
             Become a member
-          </Button>
-
-          {/*
-            Secondary to joining, not an alternative to it: "what does it cost?"
-            is the question that comes before an email address, and `GET /plans`
-            is public so it can be answered without one.
-          */}
-          <Button variant="secondary" fullWidth onPress={() => router.push('/(auth)/plans')}>
-            Choose your plan
           </Button>
         </YStack>
       </YStack>

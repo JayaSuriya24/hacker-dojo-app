@@ -25,6 +25,7 @@ import {
 } from '~/features/booking/hooks/useBooking';
 import { DigitalKey } from '~/features/home/components/DigitalKey';
 import { LiveSessionCard } from '~/features/home/components/LiveSessionCard';
+import { GreetingHeading } from '~/features/home/components/GreetingHeading';
 import { dojo } from '~/constants/config';
 import { firstNameOf, formatTime, greetingFor } from '~/utils/format';
 import { space } from '~/theme/tokens';
@@ -52,6 +53,18 @@ export default function HomeScreen() {
   const [wifiCopied, setWifiCopied] = useState(false);
 
   const isMember = me?.isActiveMember ?? false;
+
+  /**
+   * Members get the time of day; everyone else gets welcomed. Both greet by
+   * name once it has loaded — someone who has signed up but not yet joined is
+   * still a person the Dojo knows, and "Welcome to the Dojo" alone read as the
+   * app not recognising them.
+   */
+  const greeting = (() => {
+    const firstName = me ? firstNameOf(me.name) : '';
+    if (isMember && firstName) return `${greetingFor()}, ${firstName}`;
+    return firstName ? `Welcome to the Dojo, ${firstName}` : 'Welcome to the Dojo';
+  })();
   const isOpen = (() => {
     const hour = new Date().getHours();
     return hour >= dojo.publicHours.opensHour && hour < dojo.publicHours.closesHour;
@@ -89,9 +102,7 @@ export default function HomeScreen() {
       <XStack alignItems="flex-start" gap={space[4]}>
         <YStack flex={1} gap={space[1]}>
           <Text variant="eyebrow">{dojo.addressLine1}</Text>
-          <Text variant="display" role="heading">
-            {isMember && me ? `${greetingFor()}, ${firstNameOf(me.name)}` : 'Welcome to the Dojo'}
-          </Text>
+          <GreetingHeading text={greeting} />
           <Text variant="small" tone="subtle">
             Public hours {dojo.publicHours.opensHour} AM – {dojo.publicHours.closesHour - 12} PM
           </Text>

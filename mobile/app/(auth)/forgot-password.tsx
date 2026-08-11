@@ -30,7 +30,9 @@ export default function ForgotPasswordScreen() {
     formState: { errors, isSubmitting, isValid },
   } = useForm<ForgotPasswordValues>({
     resolver: zodResolver(forgotPasswordSchema),
-    mode: 'onBlur',
+    // See sign-in: with a single field, `onBlur` means the button is still
+    // disabled at the moment someone finishes typing and reaches for it.
+    mode: 'onTouched',
     defaultValues: { email: '' },
   });
 
