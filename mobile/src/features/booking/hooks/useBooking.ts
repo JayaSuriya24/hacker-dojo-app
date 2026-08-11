@@ -132,6 +132,31 @@ export function useLiveSession() {
   });
 }
 
+/**
+ * Check in to the floor.
+ *
+ * This is the only thing that puts a row in `sessions`, and `sessions` is the
+ * only thing the occupancy dial counts — unlocking the door writes an audit row
+ * and nothing else, so without this the number can never leave zero.
+ *
+ * The dial is refetched on success, though it will not move for up to a minute:
+ * the server samples occupancy on a timer rather than per request, so the
+ * refetch collects the latest SAMPLE, not a live count. Asking anyway means the
+ * number is right as soon as the next sample lands rather than whenever the
+ * poll next happens to fire.
+ */
+export function useCheckIn() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: bookingApi.checkIn,
+    onSuccess: (session) => {
+      queryClient.setQueryData(queryKeys.me.session(), session);
+      void queryClient.invalidateQueries({ queryKey: queryKeys.dojo.occupancy() });
+    },
+  });
+}
+
 export function useExtendSession() {
   const queryClient = useQueryClient();
 
@@ -149,6 +174,8 @@ export function useEndSession() {
     onSuccess: () => {
       queryClient.setQueryData(queryKeys.me.session(), null);
       void queryClient.invalidateQueries({ queryKey: queryKeys.resources.all() });
+      // Same reason as check-in: leaving changes the count too.
+      void queryClient.invalidateQueries({ queryKey: queryKeys.dojo.occupancy() });
     },
   });
 }

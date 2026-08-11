@@ -18,6 +18,7 @@ import { useMe } from '~/features/profile/hooks/useProfile';
 import { useOccupancy, useSiteSettings } from '~/features/community/hooks/useCommunity';
 import { useEvents } from '~/features/events/hooks/useEvents';
 import {
+  useCheckIn,
   useEndSession,
   useExtendSession,
   useLiveSession,
@@ -26,6 +27,7 @@ import {
 import { DigitalKey } from '~/features/home/components/DigitalKey';
 import { LiveSessionCard } from '~/features/home/components/LiveSessionCard';
 import { GreetingHeading } from '~/features/home/components/GreetingHeading';
+import { CheckInCard } from '~/features/home/components/CheckInCard';
 import { dojo } from '~/constants/config';
 import { firstNameOf, formatTime, greetingFor } from '~/utils/format';
 import { space } from '~/theme/tokens';
@@ -49,6 +51,7 @@ export default function HomeScreen() {
   const liveSession = useLiveSession();
   const extendSession = useExtendSession();
   const endSession = useEndSession();
+  const checkIn = useCheckIn();
 
   const [wifiCopied, setWifiCopied] = useState(false);
 
@@ -164,16 +167,23 @@ export default function HomeScreen() {
         )}
       </YStack>
 
-      {/* ---- Live booth session ------------------------------------------ */}
-      {isMember && liveSession.data ? (
+      {/* ---- On the floor: check in, or the live session ------------------ */}
+      {isMember ? (
         <YStack marginTop={space[4]}>
-          <LiveSessionCard
-            session={liveSession.data}
-            extending={extendSession.isPending}
-            ending={endSession.isPending}
-            onExtend={() => extendSession.mutate()}
-            onEnd={() => endSession.mutate()}
-          />
+          {liveSession.data ? (
+            <LiveSessionCard
+              session={liveSession.data}
+              extending={extendSession.isPending}
+              ending={endSession.isPending}
+              onExtend={() => extendSession.mutate()}
+              onEnd={() => endSession.mutate()}
+            />
+          ) : liveSession.isPending ? null : (
+            // Held back until the query settles. Rendering the prompt against an
+            // unknown session state would show "Check in" to someone already
+            // checked in, for as long as the request takes.
+            <CheckInCard busy={checkIn.isPending} onCheckIn={() => checkIn.mutate({})} />
+          )}
         </YStack>
       ) : null}
 
