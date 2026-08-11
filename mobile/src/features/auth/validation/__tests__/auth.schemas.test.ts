@@ -79,7 +79,6 @@ describe('signUpSchema', () => {
     fullName: 'Ana Reyes',
     email: 'ana@reyes.dev',
     password: 'Dojo2009build',
-    planId: 'standard',
     agree: true,
   };
 

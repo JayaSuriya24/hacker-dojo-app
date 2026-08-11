@@ -59,7 +59,6 @@ export const signUpSchema = z.object({
     .max(120, 'That name is too long.'),
   email: emailSchema,
   password: passwordSchema,
-  planId: z.string().min(1, 'Choose a plan.'),
   // `boolean().refine(...)` rather than `literal(true)`: the literal's INPUT
   // type is `true`, which makes an unchecked default (`false`) a type error in
   // the form's defaultValues. This keeps the input `boolean` and still refuses
