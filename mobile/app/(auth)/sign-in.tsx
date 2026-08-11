@@ -233,6 +233,15 @@ export default function SignInScreen() {
           <Button variant="primary" fullWidth onPress={() => router.push('/(auth)/sign-up')}>
             Become a member
           </Button>
+
+          {/*
+            Secondary to joining, not an alternative to it: "what does it cost?"
+            is the question that comes before an email address, and `GET /plans`
+            is public so it can be answered without one.
+          */}
+          <Button variant="secondary" fullWidth onPress={() => router.push('/(auth)/plans')}>
+            Choose your plan
+          </Button>
         </YStack>
       </YStack>
     </AuthShell>
