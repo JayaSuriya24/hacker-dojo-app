@@ -5,6 +5,7 @@ import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { XStack, YStack } from 'tamagui';
 import { AuthShell } from '~/features/auth/components/AuthShell';
+import { AuthModeSwitch } from '~/features/auth/components/AuthModeSwitch';
 import { SocialSignIn } from '~/features/auth/components/SocialSignIn';
 import { authService } from '~/features/auth/services/auth.service';
 import {
@@ -133,6 +134,8 @@ export default function SignUpScreen() {
   return (
     <AuthShell heading="Create your membership">
       <YStack gap={space[5]}>
+        <AuthModeSwitch mode="signUp" />
+
         {formError ? (
           <View
             aria-live="assertive"

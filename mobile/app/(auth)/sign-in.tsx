@@ -6,6 +6,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { XStack, YStack } from 'tamagui';
 import Svg, { Path, Rect } from 'react-native-svg';
 import { AuthShell } from '~/features/auth/components/AuthShell';
+import { AuthModeSwitch } from '~/features/auth/components/AuthModeSwitch';
 import { SocialSignIn } from '~/features/auth/components/SocialSignIn';
 import { authService } from '~/features/auth/services/auth.service';
 import { signInSchema, type SignInValues } from '~/features/auth/validation/auth.schemas';
@@ -79,6 +80,8 @@ export default function SignInScreen() {
   return (
     <AuthShell heading="Sign in to your account">
       <YStack gap={space[5]}>
+        <AuthModeSwitch mode="signIn" />
+
         {formError ? (
           <View
             aria-live="assertive"
