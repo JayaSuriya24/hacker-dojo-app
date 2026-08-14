@@ -121,52 +121,80 @@ on conflict (program_id, name) do nothing;
 -- ---------------------------------------------------------------------------
 -- Community content
 -- ---------------------------------------------------------------------------
-insert into public.startups (name, mark, tagline, stage, founded_year, hiring, sort_order) values
-  ('Pebble',    'PB', 'E-paper smartwatch that ran the first great Kickstarter campaign.', 'Acquired',     '2009', false, 1),
-  ('Ferrite',   'FR', 'Storage engine for time-series at the edge.',                       'Series A',     '2020', true,  2),
-  ('Palletron', 'PL', 'Autonomous pallet movers for mid-size warehouses.',                 'Seed',         '2018', true,  3),
-  ('Openbench', 'OB', 'Benchtop bio kits priced for community labs.',                      'Grant-funded', '2021', false, 4),
-  ('Torchlight','TL', 'Inference serving for teams without a GPU cluster.',                'Seed',         '2022', true,  5),
-  ('Rowline',   'RW', 'Teleoperated pruning rigs for specialty orchards.',                 'Pre-seed',     '2024', true,  6)
+-- Pebble is the only startup seeded, because it is the only one of the six that
+-- existed. Ferrite, Palletron, Openbench, Torchlight and Rowline were invented
+-- for the prototype and rendered on the Community tab as "Founded at the Dojo",
+-- four of them carrying a Hiring badge — an open-roles claim on behalf of
+-- companies with no roles, because they have no existence. Migration
+-- 20260814000100 removes them from databases that already have them.
+--
+-- Pebble's own line is a matter of record: it was built at the Dojo and the
+-- Kickstarter is public. Nothing invented replaces the other five; the list
+-- guards on length in the client and simply renders shorter.
+--
+-- `slug` is supplied explicitly. 20260813000200 added the column, backfilled it
+-- from `name`, then made it NOT NULL — but nothing derives it on insert, so
+-- this seed has been failing with a 23502 since that migration landed, taking
+-- the whole `supabase db reset` down with it. 'pebble' is what that migration's
+-- own backfill expression produces for this name.
+insert into public.startups (name, slug, mark, tagline, stage, founded_year, hiring, sort_order) values
+  ('Pebble', 'pebble', 'PB', 'E-paper smartwatch that ran the first great Kickstarter campaign.', 'Acquired', '2009', false, 1)
 on conflict (name) do nothing;
 
-insert into public.testimonials (name, role, quote, sort_order) values
-  ('Eric Migicovsky', 'Founder, Pebble',
-   'We built the first Pebble prototypes at a table in the Dojo. The space gave us the two things a hardware startup can''t buy early: tools and neighbours who''d already made our mistakes.', 1),
-  ('Steve Wozniak', 'Co-founder, Apple',
-   'This is what the Homebrew Computer Club felt like. People building things badly on purpose, in public, until they got good.', 2),
-  ('Chris Messina', 'Inventor of the hashtag',
-   'The Dojo is one of the last places in the valley where nobody asks what you do for a living before they help you.', 3),
-  ('Austin Allred', 'Founder, Lambda School',
-   'Cheap space plus serious people is the whole formula. Hacker Dojo has been running that formula since before it was fashionable.', 4);
+-- ---------------------------------------------------------------------------
+-- `testimonials`, `press_mentions` and `board_members` are deliberately NOT
+-- seeded, and this comment is the seed for them.
+--
+-- They used to be. The quotes were attributed to Eric Migicovsky, Steve
+-- Wozniak, Chris Messina and Austin Allred, who never said them; the headlines
+-- were invented and run under the New York Times, WIRED, the Financial Times,
+-- VentureBeat, Mercury News and Slate mastheads; the board was six invented
+-- people standing in for the actual governing board of a real 501(c)(3), which
+-- is public record on its Form 990.
+--
+-- Migration 20260814000000 deleted all of it. That fixed the database it ran
+-- against and nothing else: `supabase db reset` runs migrations and THEN this
+-- file, so every one of those rows came straight back on any fresh
+-- environment, with the migration's own explanation sitting upstream of it.
+--
+-- Nothing replaces them, because the honest replacement is nothing. Each of
+-- these sections guards on length in the client and renders as absent when its
+-- table is empty. Real quotes, real coverage and the real board can be entered
+-- through the staff tools whenever the Dojo has them.
+-- ---------------------------------------------------------------------------
 
-insert into public.press_mentions (outlet, year, headline, sort_order) values
-  ('The New York Times', '2023', 'Inside the hackerspace that outlasted the startups it launched', 1),
-  ('WIRED',              '2022', 'Where hardware founders go when the garage runs out of room',    2),
-  ('Financial Times',    '2021', 'The nonprofit clubhouse of Silicon Valley''s hardware revival',  3),
-  ('VentureBeat',        '2019', 'Fifteen companies that started at a folding table in Mountain View', 4),
-  ('Mercury News',       '2017', 'Hacker Dojo finds a permanent home on Maude Avenue',            5),
-  ('Slate',              '2014', 'What a hackerspace teaches about learning in public',           6);
-
-insert into public.board_members (name, role, sort_order) values
-  ('Katherine Ling',  'Board chair',            1),
-  ('Omar Haddad',     'Treasurer',              2),
-  ('Rosa Iglesias',   'Secretary · programs',   3),
-  ('Daniel Okonkwo',  'Facilities & safety',    4),
-  ('Hana Sugiyama',   'Advisor · hardware',     5),
-  ('Gabriel Stern',   'Advisor · nonprofit law',6);
-
+-- ---------------------------------------------------------------------------
+-- FAQs
+--
+-- Two answers here stated prices this database contradicts, and unlike the copy
+-- above, a member can act on a wrong price. Both were corrected by migration
+-- 20260814000000 and are carried in corrected form below, so a reset produces
+-- the same seven answers a migrated database already serves:
+--
+--   * "How does annual billing work?" is gone rather than rewritten. It
+--     described Annual Standard at $1,350, and `plans.price_annual_cents` is
+--     null for Standard — the product it explained cannot be bought.
+--
+--   * The dedicated desk is its own plan, not a $225/mo add-on. The answer now
+--     points at the Membership section instead of restating a number, so the
+--     price keeps exactly one home: the plans table.
+--
+--   * The verification answer advertised a veteran rate on an inactive plan
+--     `/v1/plans` has never served, and promised the discount "applies from
+--     your next invoice" when checkout charges the discounted figure up front.
+--
+-- `sort_order` 3 is left vacant rather than closed up, so these numbers keep
+-- matching a database that took the migration path.
+-- ---------------------------------------------------------------------------
 insert into public.faqs (question, answer, sort_order) values
   ('How fast can I get started?',
    'Sign up online and you can badge in the same day. A steward walks you through the floor, the labs and the booking rules in about twenty minutes.', 1),
   ('Is there a commitment? Can I cancel?',
    'Monthly membership is month to month — cancel any time before your renewal date and access ends at the end of the paid period.', 2),
-  ('How does annual billing work?',
-   'Annual Standard is $1,350 charged once, which works out to $112.50 a month and saves $450 against monthly. Annual plans are non-refundable but transferable once.', 3),
-  ('How do student and veteran rates get verified?',
-   'Upload a current student ID or a DD-214 in the member portal. Verification is usually same-day and the discounted rate applies from your next invoice.', 4),
+  ('How does the student rate get verified?',
+   'You are charged the student rate as soon as you join. Upload a current student ID from Profile & settings afterwards and a steward will review it.', 4),
   ('Can I get a dedicated desk?',
-   'Yes — a dedicated desk is a $225/mo add-on on top of any plan, subject to availability. There is usually a short waitlist.', 5),
+   'A dedicated desk is its own membership plan rather than an add-on. See Membership on the Dojo tab for the current price and availability — there is usually a short waitlist.', 5),
   ('Can I host my own event?',
    'Members host events for free in most rooms. Submit a request from the Events tab; the team replies within two business days and handles the calendar listing.', 6),
   ('Where exactly are you?',
