@@ -1,70 +1,46 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Platform } from 'react-native';
-import * as Device from 'expo-device';
 import { accessApi } from '../api/access.api';
 import { queryKeys } from '~/services/queryKeys';
 import { QUERY_STALE_TIME } from '~/constants/config';
 import { useIsActiveMember } from '~/features/profile/hooks/useProfile';
 
 /**
- * The digital key.
+ * Member credentials that this app still owns.
  *
- * Gated on membership so a guest never fires a request that can only come back
- * 403 — the dashed card on Home is what they see instead. The key itself
- * changes about never, so it is cached at the static tier.
+ * Door access is deliberately absent: it belongs entirely to Kisi now, which
+ * holds the credential, makes the decision and keeps the history. The Wi-Fi PIN
+ * below is ours because nothing else issues it.
  */
-export function useDigitalKey() {
+
+/**
+ * The member's own Wi-Fi credential.
+ *
+ * Gated on membership: a guest firing this can only get a 403 back, and the
+ * guest network they actually want is in site settings, which needs no account
+ * at all.
+ *
+ * Cached at the static tier — a PIN changes only when its owner rotates it, and
+ * that path updates the cache directly.
+ */
+export function useWifiCredential() {
   const isMember = useIsActiveMember();
 
   return useQuery({
-    queryKey: queryKeys.access.key(),
-    queryFn: accessApi.key,
+    queryKey: queryKeys.access.wifi(),
+    queryFn: accessApi.wifi,
     enabled: isMember,
     staleTime: QUERY_STALE_TIME.static,
   });
 }
 
-/**
- * A short description of the device, recorded on the audit row.
- *
- * `Device.modelName` is null on a simulator and on web, so the platform is the
- * fallback — an audit trail entry reading "unknown" helps nobody investigating
- * a badge that would not scan.
- */
-function deviceHint(): string {
-  const model = Device.modelName;
-  return model ? `${model} (${Platform.OS})` : Platform.OS;
-}
-
-/**
- * Unlock the front door.
- *
- * Deliberately NOT optimistic and deliberately not retried. The previous
- * implementation was neither a mutation nor a request: the card ran a local
- * three-state animation and reached "Access granted" without contacting
- * anything, so a member with a lapsed membership got the same green tick as a
- * paid-up one. The server decides now, and a refusal surfaces as an error the
- * card renders verbatim.
- */
-export function useUnlockDoor() {
+/** Roll a new PIN. The answer is the new credential, so it replaces the cache. */
+export function useRotateWifiPin() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: () => accessApi.unlock({ deviceHint: deviceHint() }),
-    onSuccess: () => {
-      // The history list on the same screen has a new row.
-      void queryClient.invalidateQueries({ queryKey: queryKeys.access.history() });
+    mutationFn: accessApi.rotateWifi,
+    onSuccess: (credential) => {
+      queryClient.setQueryData(queryKeys.access.wifi(), credential);
     },
-  });
-}
-
-export function useDoorHistory() {
-  const isMember = useIsActiveMember();
-
-  return useQuery({
-    queryKey: queryKeys.access.history(),
-    queryFn: accessApi.history,
-    enabled: isMember,
-    staleTime: QUERY_STALE_TIME.standard,
   });
 }

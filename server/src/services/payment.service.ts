@@ -4,6 +4,7 @@ import { env } from '../config/env.js';
 import { logger } from '../config/logger.js';
 import { paymentRepository } from '../repositories/payment.repository.js';
 import { profileRepository } from '../repositories/profile.repository.js';
+import { wifiService } from './wifi.service.js';
 import { AppError } from '../utils/errors.js';
 import type { AuthenticatedUser } from '../types/http.js';
 import type { BillingPeriod, MembershipStatus, PlanRow } from '../types/database.js';
@@ -488,6 +489,19 @@ export const paymentService = {
       { profileId, subscriptionId: subscription.id, status: subscription.status },
       'Membership synchronised from subscription',
     );
+
+    // A member who can now get through the door can also get on the member
+    // network, so the credential is issued by the same event that grants the
+    // entitlement. It issues once and emails once — see `onMembershipActivated`
+    // — because these events fire on every renewal and status change.
+    //
+    // Awaited but never allowed to throw: this runs inside the webhook's
+    // claim/confirm wrapper, and an exception here would leave a paid-for
+    // membership looking unprocessed and get the whole event retried.
+    const status = toMembershipStatus(subscription.status);
+    if (status === 'active' || status === 'trialing') {
+      await wifiService.onMembershipActivated(profileId);
+    }
   },
 };
 

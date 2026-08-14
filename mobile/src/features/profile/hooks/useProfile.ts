@@ -29,6 +29,23 @@ export function useIsActiveMember(): boolean {
   return data?.isActiveMember ?? false;
 }
 
+/**
+ * Whether to offer a tour of the space.
+ *
+ * Three screens invite the visitor to book one, and the rule is the same on all
+ * of them: a tour is for someone who is not a member and has not booked one yet.
+ * Keeping it here means the three cannot drift — the Home gate answering
+ * differently from the Dojo tab is the bug this exists to prevent.
+ *
+ * Both facts come from the API. While `useMe` is still loading, `data` is
+ * undefined and this answers `false`: an invitation that appears and then
+ * vanishes a moment later is worse than one that arrives a moment late.
+ */
+export function useShouldOfferTour(): boolean {
+  const { data } = useMe();
+  return data ? !data.isActiveMember && !data.hasBookedTour : false;
+}
+
 export function useUpdateProfile() {
   const queryClient = useQueryClient();
 

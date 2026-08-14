@@ -4,6 +4,18 @@ import { storageRepository } from '../repositories/storage.repository.js';
 import type { AuthenticatedUser } from '../types/http.js';
 import type { MemberDirectoryRow } from '../types/database.js';
 
+/**
+ * The Home dial. Exported because check-in and check-out return one of these
+ * alongside the session, so the app can put the new number on screen without a
+ * second request — see `bookingService.checkIn`.
+ */
+export interface OccupancyView {
+  total: number;
+  capacity: number;
+  percent: number;
+  zones: Array<{ name: string; headCount: number; capacity: number }>;
+}
+
 export interface MemberCardView {
   id: string;
   name: string;
@@ -48,17 +60,6 @@ function toMemberCard(row: MemberDirectoryRow): MemberCardView {
   };
 }
 
-export interface StartupView {
-  id: string;
-  name: string;
-  mark: string;
-  tagline: string;
-  stage: string;
-  foundedYear: string;
-  hiring: boolean;
-  website: string | null;
-}
-
 export const communityService = {
   async directory(user: AuthenticatedUser, query: DirectoryQuery): Promise<MemberCardView[]> {
     const rows = await profileRepository.directory(user.accessToken, query);
@@ -79,21 +80,6 @@ export const communityService = {
    * client a database row, so `founded_year` was the one snake_case field in an
    * otherwise camelCase domain type.
    */
-  async startups(): Promise<StartupView[]> {
-    const rows = await contentRepository.startups();
-
-    return rows.map((row) => ({
-      id: row.id,
-      name: row.name,
-      mark: row.mark,
-      tagline: row.tagline,
-      stage: row.stage,
-      foundedYear: row.founded_year,
-      hiring: row.hiring,
-      website: row.website,
-    }));
-  },
-
   /**
    * Live occupancy for the Home dial.
    *
@@ -101,12 +87,7 @@ export const communityService = {
    * and the caption can never disagree — a real risk if the client summed the
    * zones itself while the server reported a separately-sampled total.
    */
-  async occupancy(): Promise<{
-    total: number;
-    capacity: number;
-    percent: number;
-    zones: Array<{ name: string; headCount: number; capacity: number }>;
-  }> {
+  async occupancy(): Promise<OccupancyView> {
     const rows = await contentRepository.occupancy();
 
     const total = rows.reduce((sum, row) => sum + row.head_count, 0);

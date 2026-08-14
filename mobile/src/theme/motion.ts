@@ -1,4 +1,4 @@
-import { Easing, type EasingFunction } from 'react-native';
+import { Easing, Platform, type EasingFunction } from 'react-native';
 import { motion } from './tokens';
 
 /**
@@ -51,6 +51,12 @@ export function timing(
   return {
     duration: options.reducedMotion ? 0 : motion[speed],
     easing: options.easing ?? motionEasing,
-    useNativeDriver: options.useNativeDriver ?? true,
+    // Native by default, and never on web. react-native-web ships no native
+    // animated module at all, so asking for the driver there earns a console
+    // warning per animation and falls back to the JS one regardless — the
+    // request was never anything but noise. Forced rather than merely
+    // defaulted, because an explicit `true` from a caller cannot be honoured on
+    // web either; there is nothing to honour it with.
+    useNativeDriver: Platform.OS === 'web' ? false : (options.useNativeDriver ?? true),
   };
 }

@@ -1,5 +1,6 @@
-import { Redirect, Stack } from 'expo-router';
+import { Redirect, Stack, usePathname } from 'expo-router';
 import { useAuth } from '~/providers/AuthProvider';
+import { useMe } from '~/features/profile/hooks/useProfile';
 import { usePalette } from '~/providers/ThemeProvider';
 
 /**
@@ -12,10 +13,28 @@ import { usePalette } from '~/providers/ThemeProvider';
  */
 export default function AppLayout() {
   const { isAuthenticated, isLoading } = useAuth();
+  const { data: me } = useMe();
+  const pathname = usePathname();
   const palette = usePalette();
 
   if (isLoading) return null;
   if (!isAuthenticated) return <Redirect href="/(auth)/sign-in" />;
+
+  /*
+   * The one-time skills prompt.
+   *
+   * Gated on the server's own flag rather than on `skills.length`, because an
+   * empty list cannot distinguish "never asked" from "asked, and they skipped"
+   * — the second would be asked again forever.
+   *
+   * Held until `me` has loaded: redirecting on an undefined profile would send
+   * every member through the prompt on every cold start, before the answer
+   * arrives. And the prompt route itself is excluded, or it redirects to
+   * itself.
+   */
+  if (me && !me.skillsPrompted && pathname !== '/skills') {
+    return <Redirect href="/(app)/skills" />;
+  }
 
   return (
     <Stack
@@ -25,6 +44,9 @@ export default function AppLayout() {
       }}
     >
       <Stack.Screen name="(tabs)" />
+
+      {/* A full-screen step, not a sheet: it is the only thing to do here. */}
+      <Stack.Screen name="skills" options={{ animation: 'fade' }} />
 
       {/*
         Detail surfaces present as sheets rather than pushes. On iOS

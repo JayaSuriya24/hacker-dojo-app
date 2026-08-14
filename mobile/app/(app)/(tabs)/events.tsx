@@ -2,22 +2,18 @@ import { useCallback, useMemo, useState } from 'react';
 import { FlatList, RefreshControl, ScrollView, View } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { YStack } from 'tamagui';
+import { XStack, YStack } from 'tamagui';
 import { Button, Chip, EmptyState, ErrorState, ListSkeleton, ScreenHeader } from '~/components/ui';
+import { RefreshButton } from '~/features/events/components/RefreshButton';
 import { EventCard } from '~/features/events/components/EventCard';
 import { useCancelRsvp, useEvents, useRsvp } from '~/features/events/hooks/useEvents';
 import { usePreferencesStore } from '~/store/preferences.store';
 import { usePalette } from '~/providers/ThemeProvider';
 import { space } from '~/theme/tokens';
-import type { DojoEvent, EventCategory } from '~/types/domain';
+import { EVENT_CATEGORIES, type DojoEvent, type EventCategory } from '~/types/domain';
 
-const CATEGORIES: Array<EventCategory | 'All'> = [
-  'All',
-  'Hackathons',
-  'Hardware',
-  'AI/ML',
-  'Community',
-];
+// 'All' first, then every category the database accepts.
+const CATEGORIES: Array<EventCategory | 'All'> = ['All', ...EVENT_CATEGORIES];
 
 /**
  * Events.
@@ -63,9 +59,12 @@ export default function EventsScreen() {
           eyebrow="This month"
           title="Events"
           trailing={
-            <Button size="sm" onPress={() => router.push('/(app)/host-event')}>
-              Host an event
-            </Button>
+            <XStack alignItems="center" gap={space[2]}>
+              <RefreshButton busy={query.isFetching} onPress={() => void query.refetch()} />
+              <Button size="sm" onPress={() => router.push('/(app)/host-event')}>
+                Host an event
+              </Button>
+            </XStack>
           }
         />
 
@@ -74,7 +73,7 @@ export default function EventsScreen() {
           showsHorizontalScrollIndicator={false}
           style={{ marginHorizontal: -space[5] }}
           contentContainerStyle={{ paddingHorizontal: space[5], gap: space[2] }}
-          accessibilityRole="tablist"
+          role="tablist"
         >
           {CATEGORIES.map((entry) => (
             <Chip
@@ -87,7 +86,7 @@ export default function EventsScreen() {
         </ScrollView>
       </YStack>
     ),
-    [category, setCategory],
+    [category, setCategory, query.isFetching, query.refetch],
   );
 
   if (query.isError) {

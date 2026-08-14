@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import { Alert, Linking, View } from 'react-native';
+import { Linking, Platform, View } from 'react-native';
 import { router, Stack } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { XStack, YStack } from 'tamagui';
@@ -13,7 +13,6 @@ import {
   Section,
   Divider,
   Segmented,
-  StatusPill,
   Text,
   Toggle,
 } from '~/components/ui';
@@ -27,8 +26,8 @@ import { useRegisterPushToken } from '~/hooks/useNotifications';
 import { useAvatarUpload, useDeleteAvatar } from '~/features/uploads/hooks/useUploads';
 import { useBillingPortal } from '~/features/payments/hooks/usePayments';
 import { useIsStaff } from '~/features/staff/hooks/useStaff';
-import { useDoorHistory } from '~/features/access/hooks/useAccess';
 import { userMessage } from '~/services/api/errors';
+import { confirm } from '~/services/confirm';
 import { authService } from '~/features/auth/services/auth.service';
 import { usePreferencesStore } from '~/store/preferences.store';
 import { usePalette } from '~/providers/ThemeProvider';
@@ -64,7 +63,6 @@ export default function SettingsScreen() {
   const removeAvatar = useDeleteAvatar();
   const billingPortal = useBillingPortal();
   const isStaff = useIsStaff();
-  const doorHistory = useDoorHistory();
 
   const changePhoto = useCallback(async () => {
     setPhotoError(null);
@@ -75,45 +73,84 @@ export default function SettingsScreen() {
     }
   }, [avatar]);
 
-  const confirmSignOut = () => {
-    Alert.alert('Sign out?', 'You will need your password or a one-time code to sign back in.', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Sign out',
-        style: 'destructive',
-        onPress: () => {
-          setSigningOut(true);
-          void authService.signOut().finally(() => {
-            setSigningOut(false);
-            router.replace('/(auth)/sign-in');
-          });
-        },
-      },
-    ]);
+  const confirmSignOut = async () => {
+    const confirmed = await confirm({
+      title: 'Sign out?',
+      message: 'You will need your password or a one-time code to sign back in.',
+      confirmLabel: 'Sign out',
+      destructive: true,
+    });
+    if (!confirmed) return;
+
+    setSigningOut(true);
+    // Route away regardless: a failed token revocation still clears the local
+    // session, and leaving someone stranded on a signed-in screen they asked to
+    // leave is worse than a server-side session that expires on its own.
+    void authService.signOut().finally(() => {
+      setSigningOut(false);
+      router.replace('/(auth)/sign-in');
+    });
   };
 
   const toggleNotification = async (
     key: 'events' | 'bookings' | 'weeklyDigest',
     value: boolean,
   ) => {
-    // Turning anything on for the first time is the moment to ask for the OS
-    // permission — the member has just said they want these.
-    if (value && !notifications.data?.hasPushToken) {
-      const granted = await registerPush();
-      if (!granted) {
-        Alert.alert(
-          'Notifications are off',
-          'Turn them on for Hacker Dojo in your device settings to get reminders.',
-          [
-            { text: 'Not now', style: 'cancel' },
-            { text: 'Open settings', onPress: () => void Linking.openSettings() },
-          ],
-        );
-        return;
-      }
+    /*
+     * Save the preference first, and unconditionally.
+     *
+     * This used to sit behind the permission check and `return` when push
+     * registration failed, which meant the switch could not be turned on at all
+     * on web or on a simulator: `registerPush` answers 'unsupported' there, and
+     * the preference was thrown away before it reached the API. The switch
+     * snapped back and nothing was written.
+     *
+     * The two are not the same decision. The preference lives on the profile
+     * and applies to every device the member signs in on; a push token is one
+     * device's ability to receive what the preference asks for. Someone setting
+     * this from a browser is expressing a choice about their phone, and the
+     * server is entitled to hear it either way.
+     */
+    updateNotifications.mutate({ [key]: value });
+
+    // Turning something on is the moment to ask for the OS permission — the
+    // member has just said they want these. Nothing below can un-save the line
+    // above; it only decides what we tell them about delivery.
+    if (!value || notifications.data?.hasPushToken) return;
+
+    const outcome = await registerPush();
+    if (outcome === 'granted') return;
+
+    if (outcome === 'unsupported') {
+      // No permission to grant and no settings pane to open — a browser or a
+      // simulator simply has no push service. Saying "turn them on in your
+      // device settings" here sends someone looking for a switch that is not
+      // there, which is what the single boolean used to do.
+      await confirm({
+        title: 'Saved for your phone',
+        message:
+          'This preference is saved, but push notifications only arrive on the Hacker Dojo app on a real device.',
+        confirmLabel: 'Got it',
+      });
+      return;
     }
 
-    updateNotifications.mutate({ [key]: value });
+    const openSettings = await confirm({
+      title: 'Notifications are off',
+      message:
+        outcome === 'blocked'
+          ? 'Your preference is saved. To actually get them, turn notifications on for Hacker Dojo in your device settings.'
+          : 'Your preference is saved. Allow notifications when asked to start receiving them.',
+      confirmLabel: outcome === 'blocked' ? 'Open settings' : 'Got it',
+      cancelLabel: 'Not now',
+    });
+
+    // `Linking.openSettings` does not exist on react-native-web — calling it
+    // there is a TypeError, not a no-op. Unreachable from the 'unsupported'
+    // branch above, but the platform guard stays as a belt on the braces.
+    if (openSettings && outcome === 'blocked' && Platform.OS !== 'web') {
+      void Linking.openSettings();
+    }
   };
 
   return (
@@ -155,7 +192,7 @@ export default function SettingsScreen() {
               </XStack>
 
               {photoError ? (
-                <View accessibilityLiveRegion="assertive" accessibilityRole="alert">
+                <View aria-live="assertive" role="alert">
                   <Text variant="caption" tone="error">
                     {photoError}
                   </Text>
@@ -169,7 +206,7 @@ export default function SettingsScreen() {
                   loading={avatar.isPending}
                   disabled={avatar.isPending || removeAvatar.isPending}
                   onPress={() => void changePhoto()}
-                  accessibilityLabel="Change your profile photo"
+                  aria-label="Change your profile photo"
                 >
                   {me.avatarUrl ? 'Change photo' : 'Add a photo'}
                 </Button>
@@ -180,7 +217,7 @@ export default function SettingsScreen() {
                     loading={removeAvatar.isPending}
                     disabled={avatar.isPending || removeAvatar.isPending}
                     onPress={() => removeAvatar.mutate()}
-                    accessibilityLabel="Remove your profile photo"
+                    aria-label="Remove your profile photo"
                   >
                     Remove
                   </Button>
@@ -199,7 +236,7 @@ export default function SettingsScreen() {
             {/* ---- Appearance --------------------------------------------- */}
             <Section title="Appearance">
               <Segmented
-                accessibilityLabel="App appearance"
+                aria-label="App appearance"
                 options={[
                   { value: 'system', label: 'System' },
                   { value: 'light', label: 'Light' },
@@ -222,7 +259,7 @@ export default function SettingsScreen() {
                   <YStack>
                     <Toggle
                       label="Event announcements"
-                      description="New events and reminders for ones you are attending"
+                      description="New event announcements by email."
                       value={notifications.data?.events ?? false}
                       onChange={(value) => void toggleNotification('events', value)}
                     />
@@ -242,6 +279,18 @@ export default function SettingsScreen() {
                     />
                   </YStack>
                 )}
+
+                {/*
+                  The mutation rolls a failed write back optimistically, which
+                  moved the switch back to where it started and said nothing at
+                  all — indistinguishable from the member's own tap not
+                  registering. Same treatment as Manage billing on the Dojo tab.
+                */}
+                {updateNotifications.isError ? (
+                  <Text variant="small" tone="error" aria-live="polite">
+                    {userMessage(updateNotifications.error)}
+                  </Text>
+                ) : null}
               </Card>
             </Section>
 
@@ -254,6 +303,11 @@ export default function SettingsScreen() {
                   value={me.directoryVisible}
                   onChange={(value) => updateProfile.mutate({ directory_visible: value })}
                 />
+                {updateProfile.isError ? (
+                  <Text variant="small" tone="error" aria-live="polite">
+                    {userMessage(updateProfile.error)}
+                  </Text>
+                ) : null}
               </Card>
             </Section>
 
@@ -268,51 +322,6 @@ export default function SettingsScreen() {
                 />
               </Card>
             </Section>
-
-            {/* ---- Door activity ------------------------------------------ */}
-            {me.isActiveMember ? (
-              <Section title="Door activity">
-                <Card padded="tight" gap={space[2]}>
-                  {doorHistory.isPending ? (
-                    <ListSkeleton count={2} height={28} />
-                  ) : (doorHistory.data ?? []).length === 0 ? (
-                    <Text variant="small" tone="subtle">
-                      No door events yet.
-                    </Text>
-                  ) : (
-                    /*
-                     * The member's own audit trail. Every unlock attempt writes a
-                     * row, granted or refused, and showing them the refusals is
-                     * the point: "why wouldn't the door open at 11pm" is
-                     * answerable now rather than a shrug at the front desk.
-                     */
-                    (doorHistory.data ?? []).slice(0, 5).map((entry, index) => (
-                      <YStack key={entry.id}>
-                        {index > 0 ? <Divider variant="inset" spacing={space[2]} /> : null}
-                        <XStack alignItems="center" gap={space[3]} paddingVertical={space[1]}>
-                          <StatusPill
-                            label={entry.granted ? 'Opened' : 'Refused'}
-                            tone={entry.granted ? 'ok' : 'error'}
-                            bordered={false}
-                          />
-                          <Text variant="caption" tone="subtle" flex={1} numberOfLines={1}>
-                            {entry.reason ? entry.reason.replace(/_/g, ' ') : ''}
-                          </Text>
-                          <Text variant="mono" tone="subtle">
-                            {new Date(entry.at).toLocaleString(undefined, {
-                              month: 'short',
-                              day: 'numeric',
-                              hour: 'numeric',
-                              minute: '2-digit',
-                            })}
-                          </Text>
-                        </XStack>
-                      </YStack>
-                    ))
-                  )}
-                </Card>
-              </Section>
-            ) : null}
 
             {/* ---- Verification ------------------------------------------- */}
             <Section title="Verification">
@@ -356,15 +365,25 @@ export default function SettingsScreen() {
                   session is minted per tap because portal links are single-use.
                 */}
                 {me.membership?.manageable ? (
-                  <Button
-                    variant="secondary"
-                    fullWidth
-                    loading={billingPortal.isPending}
-                    onPress={() => billingPortal.mutate()}
-                    accessibilityHint="Opens Stripe to change your plan, card or cancel"
-                  >
-                    Manage billing
-                  </Button>
+                  <>
+                    <Button
+                      variant="secondary"
+                      fullWidth
+                      loading={billingPortal.isPending}
+                      onPress={() => billingPortal.mutate()}
+                      accessibilityHint="Opens Stripe to change your plan, card or cancel"
+                    >
+                      Manage billing
+                    </Button>
+
+                    {/* Same silent failure as the Dojo tab's copy of this
+                        button: without this the tap simply did nothing. */}
+                    {billingPortal.isError ? (
+                      <Text variant="small" tone="error" aria-live="polite">
+                        {userMessage(billingPortal.error)}
+                      </Text>
+                    ) : null}
+                  </>
                 ) : null}
 
                 <Button
@@ -379,7 +398,7 @@ export default function SettingsScreen() {
                   variant="destructive"
                   fullWidth
                   loading={signingOut}
-                  onPress={confirmSignOut}
+                  onPress={() => void confirmSignOut()}
                 >
                   Sign out
                 </Button>

@@ -6,6 +6,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { XStack, YStack } from 'tamagui';
 import { AuthShell } from '~/features/auth/components/AuthShell';
 import { authService } from '~/features/auth/services/auth.service';
+import { authProviders } from '~/features/auth/providers';
 import {
   otpRequestSchema,
   otpVerifySchema,
@@ -16,6 +17,7 @@ import { Button, Segmented, Text, TextField } from '~/components/ui';
 import { usePalette } from '~/providers/ThemeProvider';
 import { userMessage } from '~/services/api/errors';
 import { radius, space } from '~/theme/tokens';
+import { AUTH_HOME, goBackOr } from '~/utils/navigation';
 
 type Step = 'request' | 'verify';
 
@@ -36,7 +38,10 @@ export default function VerifyOtpScreen() {
 
   const requestForm = useForm<OtpRequestValues>({
     resolver: zodResolver(otpRequestSchema),
-    mode: 'onBlur',
+    // See sign-in: `onBlur` leaves `isValid` stale until a field is left, and
+    // here the email is the only field — so the button stays disabled until the
+    // member taps somewhere idle. The channel switch cannot blur at all.
+    mode: 'onTouched',
     defaultValues: { channel: 'email', email: '', phone: '' },
   });
 
@@ -89,8 +94,8 @@ export default function VerifyOtpScreen() {
 
   const banner = formError ? (
     <View
-      accessibilityLiveRegion="assertive"
-      accessibilityRole="alert"
+      aria-live="assertive"
+      role="alert"
       style={{
         backgroundColor: palette.errorTint,
         borderWidth: 1,
@@ -105,7 +110,7 @@ export default function VerifyOtpScreen() {
     </View>
   ) : notice ? (
     <View
-      accessibilityLiveRegion="polite"
+      aria-live="polite"
       style={{
         backgroundColor: palette.accentTint,
         borderWidth: 1,
@@ -187,19 +192,27 @@ export default function VerifyOtpScreen() {
       <YStack gap={space[5]}>
         {banner}
 
-        <Segmented
-          accessibilityLabel="Where to send the code"
-          options={[
-            { value: 'email', label: 'Email' },
-            { value: 'phone', label: 'Mobile' },
-          ]}
-          value={channel}
-          onChange={(next) => {
-            setChannel(next);
-            requestForm.setValue('channel', next);
-            requestForm.clearErrors();
-          }}
-        />
+        {/*
+          With the phone provider off there is only one destination, and a
+          one-option switch is just a control that cannot be operated. Hiding it
+          also pins `channel` to its 'email' default, so the phone field and
+          `sendPhoneOtp` below are unreachable rather than merely discouraged.
+        */}
+        {authProviders.phone ? (
+          <Segmented
+            aria-label="Where to send the code"
+            options={[
+              { value: 'email', label: 'Email' },
+              { value: 'phone', label: 'Mobile' },
+            ]}
+            value={channel}
+            onChange={(next) => {
+              setChannel(next);
+              requestForm.setValue('channel', next);
+              requestForm.clearErrors();
+            }}
+          />
+        ) : null}
 
         {channel === 'email' ? (
           <Controller
@@ -258,7 +271,7 @@ export default function VerifyOtpScreen() {
               : 'Email me a code'}
         </Button>
 
-        <Button variant="ghost" fullWidth onPress={() => router.back()}>
+        <Button variant="ghost" fullWidth onPress={() => goBackOr(AUTH_HOME)}>
           Use my password instead
         </Button>
       </YStack>

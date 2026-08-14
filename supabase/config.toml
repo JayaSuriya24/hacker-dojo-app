@@ -27,7 +27,17 @@ file_size_limit = "20MiB"
 [auth]
 enabled = true
 site_url = "hackerdojo://"
-additional_redirect_urls = ["hackerdojo://auth/callback", "https://app.hackerdojo.org/auth/callback"]
+# Supabase silently falls back to `site_url` when a requested `redirect_to` is
+# not listed here. On web the app asks for its own origin, so without the
+# localhost entries a confirmation email pointed at `hackerdojo://` — a custom
+# scheme a browser cannot open, which is why the link dead-ended.
+# 127.0.0.1 is a distinct origin from localhost and needs its own entry.
+additional_redirect_urls = [
+  "hackerdojo://auth/callback",
+  "https://app.hackerdojo.org/auth/callback",
+  "http://localhost:8081/auth/callback",
+  "http://127.0.0.1:8081/auth/callback",
+]
 jwt_expiry = 3600
 enable_refresh_token_rotation = true
 refresh_token_reuse_interval = 10
@@ -43,8 +53,39 @@ max_frequency = "60s"
 otp_length = 6
 otp_expiry = 600
 
-[auth.email.template.magic_link]
-subject = "Your Hacker Dojo sign-in link"
+# Custom SMTP, via Resend.
+#
+# Without this block Supabase Auth falls back to its own built-in sender, which
+# is documented as test-only: a few messages an hour, and delivery restricted to
+# the project team's own addresses. That is why signup "worked" while nobody
+# outside the team could ever confirm — the account was created and the
+# confirmation mail was simply never delivered.
+#
+# This is SEPARATE from `server/src/services/email.service.ts`, which calls the
+# Resend HTTP API for the app's own mail (the membership welcome and its Wi-Fi
+# PIN). Auth cannot use that path — Supabase sends confirmation mail itself and
+# only ever speaks SMTP — so the same Resend account is reached two ways.
+#
+# `admin_email` MUST be on a domain verified in Resend. The shared
+# `onboarding@resend.dev` sender needs no verification but only delivers to the
+# Resend account owner, which reproduces the exact bug this block fixes.
+[auth.email.smtp]
+enabled = true
+host = "smtp.resend.com"
+port = 587
+# Resend's SMTP username is the literal string "resend" for every account; the
+# API key is the password.
+user = "resend"
+pass = "env(SUPABASE_AUTH_SMTP_PASS)"
+admin_email = "env(SUPABASE_AUTH_SMTP_ADMIN_EMAIL)"
+sender_name = "Hacker Dojo"
+
+# Custom email templates need either a paid plan or a custom SMTP provider —
+# `config push` fails the WHOLE auth update with a 400 otherwise, so this stays
+# commented until [auth.email.smtp] is configured. It still applies to a local
+# `supabase start`, which runs its own Inbucket and does not care.
+# [auth.email.template.magic_link]
+# subject = "Your Hacker Dojo sign-in link"
 
 [auth.sms]
 enable_signup = false
@@ -70,8 +111,19 @@ client_id = "env(SUPABASE_AUTH_GOOGLE_CLIENT_ID)"
 secret = "env(SUPABASE_AUTH_GOOGLE_SECRET)"
 skip_nonce_check = false
 
+# Off until the Apple credentials exist. Enabling a provider with an empty
+# secret does not fail loudly — it pushes a broken provider that answers every
+# sign-in attempt with an invalid_client error from Apple.
+#
+# To turn on: create a Services ID and an ES256 .p8 key in the Apple Developer
+# portal, mint the client secret JWT from the key, put both in `supabase/.env`,
+# flip `enabled` back to true and run `supabase config push`.
+#
+# Note this is separate from the NATIVE flow the app actually uses on iOS —
+# `signInWithIdToken` in auth.service.ts — which App Store guideline 4.8
+# requires. That one needs this provider configured too.
 [auth.external.apple]
-enabled = true
+enabled = false
 client_id = "env(SUPABASE_AUTH_APPLE_CLIENT_ID)"
 secret = "env(SUPABASE_AUTH_APPLE_SECRET)"
 

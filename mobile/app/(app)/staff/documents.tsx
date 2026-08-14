@@ -118,7 +118,7 @@ export default function StaffDocumentsScreen() {
                   <Button
                     variant="secondary"
                     onPress={() => void Linking.openURL(document.url as string)}
-                    accessibilityLabel={`Open ${document.fileName}`}
+                    aria-label={`Open ${document.fileName}`}
                     accessibilityHint="Opens the file in your browser"
                   >
                     Open file
@@ -146,7 +146,7 @@ export default function StaffDocumentsScreen() {
                       loading={acting === document.id && review.isPending}
                       disabled={review.isPending}
                       onPress={() => decide(document.id, 'approved')}
-                      accessibilityLabel={`Approve ${document.fileName}`}
+                      aria-label={`Approve ${document.fileName}`}
                     >
                       Approve
                     </Button>
@@ -157,7 +157,7 @@ export default function StaffDocumentsScreen() {
                       fullWidth
                       disabled={review.isPending}
                       onPress={() => decide(document.id, 'rejected')}
-                      accessibilityLabel={`Reject ${document.fileName}`}
+                      aria-label={`Reject ${document.fileName}`}
                     >
                       Reject
                     </Button>

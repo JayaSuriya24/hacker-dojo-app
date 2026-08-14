@@ -28,6 +28,7 @@ export type ProfilePatch = Partial<
     | 'phone'
     | 'directory_visible'
     | 'avatar_path'
+    | 'skills_prompted_at'
   >
 >;
 

@@ -90,6 +90,16 @@ const EnvSchema = z
      */
     EXPO_ACCESS_TOKEN: z.preprocess(unsetPlaceholder, z.string().min(1).optional()),
 
+    /**
+     * Transactional email. Optional outside production for the same reason as
+     * Stripe: nothing about bookings, the door or the floor needs it, and the
+     * welcome mail's contents (the Wi-Fi PIN) are on the Home screen anyway.
+     * While it is unset a send is logged rather than transmitted.
+     */
+    EMAIL_API_KEY: z.preprocess(unsetPlaceholder, z.string().min(1).optional()),
+    /** The From address on member mail. Must be a domain the provider verifies. */
+    EMAIL_FROM: z.preprocess(unsetPlaceholder, z.email().optional()),
+
     /** How often the API samples live sessions into `occupancy_samples`. */
     OCCUPANCY_SAMPLE_INTERVAL_MS: z.coerce
       .number()
@@ -175,6 +185,22 @@ const EnvSchema = z
         code: 'custom',
         path: ['EXPO_ACCESS_TOKEN'],
         message: 'EXPO_ACCESS_TOKEN is required in production — push would silently no-op.',
+      });
+    }
+    // Same argument as push: a new member whose welcome mail was logged and
+    // never sent has no idea a PIN exists to look for.
+    if (!env.EMAIL_API_KEY) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['EMAIL_API_KEY'],
+        message: 'EMAIL_API_KEY is required in production — the welcome email would never send.',
+      });
+    }
+    if (!env.EMAIL_FROM) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['EMAIL_FROM'],
+        message: 'EMAIL_FROM is required in production — mail needs a verified sender.',
       });
     }
     if (env.BILLING_PORTAL_RETURN_URL.startsWith('http://')) {

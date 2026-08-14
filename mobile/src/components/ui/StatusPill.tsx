@@ -43,12 +43,11 @@ export function StatusPill({
       borderColor={bordered ? palette.border : 'transparent'}
       alignSelf="flex-start"
       accessible
-      accessibilityRole="text"
-      accessibilityLabel={label}
+      aria-label={label}
     >
       <View
         style={{ width: 6, height: 6, borderRadius: radius.pill, backgroundColor: color }}
-        accessibilityElementsHidden
+        aria-hidden
       />
       <Text variant="caption" color={color} numberOfLines={1} maxFontSizeMultiplier={1.3}>
         {label}

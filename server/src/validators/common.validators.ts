@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { EVENT_CATEGORIES } from '../types/database.js';
 
 /** Building blocks shared across request schemas. */
 
@@ -38,6 +39,8 @@ export const safeText = (max: number) =>
     .max(max, `Keep this under ${max} characters.`)
     .transform((value) => value.replace(/[<>]/g, ''));
 
-export const eventCategory = z.enum(['Hackathons', 'Hardware', 'AI/ML', 'Community']);
+// Derived from the one list in `database.ts`, so a category added to the enum
+// cannot be accepted here and then be missing there, or the reverse.
+export const eventCategory = z.enum(EVENT_CATEGORIES);
 export const resourceKind = z.enum(['hardware', 'room']);
 export const billingPeriod = z.enum(['month', 'year']);

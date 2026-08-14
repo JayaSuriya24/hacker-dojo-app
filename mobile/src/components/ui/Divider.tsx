@@ -36,8 +36,7 @@ export function Divider({ spacing = space[4], variant = 'full' }: DividerProps) 
   if (variant === 'inset') {
     return (
       <View
-        accessibilityElementsHidden
-        importantForAccessibility="no-hide-descendants"
+        aria-hidden
         style={{ height: 1, backgroundColor: palette.border, marginVertical: spacing }}
       />
     );
@@ -45,8 +44,7 @@ export function Divider({ spacing = space[4], variant = 'full' }: DividerProps) 
 
   return (
     <LinearGradient
-      accessibilityElementsHidden
-      importantForAccessibility="no-hide-descendants"
+      aria-hidden
       height={1}
       marginVertical={spacing}
       // Four stops rather than a symmetric three: the solid section has to hold

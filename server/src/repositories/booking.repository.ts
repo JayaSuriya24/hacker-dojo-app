@@ -9,6 +9,20 @@ import type {
   SessionRow,
 } from '../types/database.js';
 
+/**
+ * One confirmed booking with its booker.
+ *
+ * `profiles` is an embed and PostgREST types it as possibly absent, so the
+ * service must treat a missing name as "unknown" rather than assume it is
+ * there.
+ */
+export interface ReservationRow {
+  resource_id: string;
+  starts_at: string;
+  ends_at: string;
+  profiles: { full_name: string; directory_visible: boolean } | null;
+}
+
 export interface CreateBookingInput {
   profileId: string;
   resourceId: string;
@@ -63,6 +77,46 @@ export const resourceRepository = {
         .order('starts_at')
         .returns<Array<{ starts_at: string; ends_at: string }>>(),
       'Could not load availability.',
+    );
+  },
+
+  /**
+   * Reservations across several resources at once, for one day.
+   *
+   * Unlike `busyRanges` above, this DOES carry the booker — the home screen
+   * names who has the room. The service is what decides whether that name
+   * survives into the response, and it applies the same rule the members
+   * directory already enforces in RLS: `directory_visible and
+   * is_active_member()`. Anonymous and lapsed callers get times only.
+   *
+   * The name is fetched unconditionally rather than in a second query because
+   * the alternative — deciding here — would put an authorisation rule in the
+   * repository, where the service-role key already bypasses RLS and there is
+   * no caller identity to test it against.
+   *
+   * The `profiles` embed resolves through `bookings.profile_id`, which is a
+   * real foreign key. That matters: the reminders query broke precisely
+   * because it embedded a table it had no FK to, and PostgREST silently
+   * resolved it somewhere useless.
+   */
+  async busyRangesFor(
+    resourceIds: string[],
+    windowStart: string,
+    windowEnd: string,
+  ): Promise<ReservationRow[]> {
+    if (resourceIds.length === 0) return [];
+
+    return unwrapList(
+      await adminClient
+        .from('bookings')
+        .select('resource_id, starts_at, ends_at, profiles(full_name, directory_visible)')
+        .in('resource_id', resourceIds)
+        .eq('status', 'confirmed')
+        .lt('starts_at', windowEnd)
+        .gt('ends_at', windowStart)
+        .order('starts_at')
+        .returns<ReservationRow[]>(),
+      "Could not load today's reservations.",
     );
   },
 };
@@ -170,6 +224,51 @@ export const sessionRepository = {
         .maybeSingle<LiveSessionRow>(),
       'Could not load your session.',
     );
+  },
+
+  /**
+   * Close the caller's own session if it ran past its expiry without a checkout.
+   *
+   * Two definitions of "live" had drifted apart. The unique index that stops a
+   * second session keys on `ended_at is null` alone — expiry means nothing to
+   * it — while every read of a session also demands `expires_at > now()`. A
+   * session that timed out rather than being ended therefore went invisible to
+   * the app while still holding the index slot, so the next check-in came back
+   * as a unique violation the member read as "That already exists." and there
+   * was no way out: checkout could not see the row either.
+   *
+   * `maybeSingle` is safe here for the same reason the bug existed — the
+   * partial unique index permits at most one open row per profile.
+   *
+   * `ended_at` is set to the expiry rather than to now, because that is when
+   * the member stopped being on the floor. Stamping the current time would
+   * credit them with every hour since.
+   */
+  async endExpiredFor(accessToken: string, profileId: string): Promise<boolean> {
+    const stale = unwrapMaybe(
+      await userClient(accessToken)
+        .from('sessions')
+        .select('id, expires_at')
+        .eq('profile_id', profileId)
+        .is('ended_at', null)
+        .lt('expires_at', new Date().toISOString())
+        .maybeSingle<{ id: string; expires_at: string }>(),
+      'Could not check your previous session.',
+    );
+
+    if (!stale) return false;
+
+    unwrap(
+      await userClient(accessToken)
+        .from('sessions')
+        .update({ ended_at: stale.expires_at })
+        .eq('id', stale.id)
+        .select('id')
+        .single<{ id: string }>(),
+      'Could not close your previous session.',
+    );
+
+    return true;
   },
 
   /**

@@ -1,19 +1,16 @@
 import { api } from '~/services/api/client';
-import type { DigitalKey, DoorEvent, UnlockResult } from '~/types/domain';
+import type { WifiCredential } from '~/types/domain';
 
 /**
- * Door access.
+ * Member credentials.
  *
- * `unlock` deliberately does not opt into the client's retry: it is not
- * idempotent in any way a member would want — a retried request is a second
- * unlock, a second audit row, and a door that opens again thirty seconds after
- * they walked through.
+ * Door endpoints used to live here. They are gone: physical access is Kisi's
+ * entirely, so this app neither issues a door credential nor asks anything to
+ * open. What remains is the Wi-Fi PIN, which nothing else mints.
  */
 export const accessApi = {
-  key: () => api.get<DigitalKey>('/me/key'),
+  wifi: () => api.get<WifiCredential>('/me/wifi'),
 
-  unlock: (input: { deviceHint?: string }) =>
-    api.post<UnlockResult>('/me/key/unlock', input, { retry: false }),
-
-  history: () => api.get<DoorEvent[]>('/me/key/history'),
+  /** Not idempotent: a retry would mint a second new PIN. */
+  rotateWifi: () => api.post<WifiCredential>('/me/wifi/rotate', undefined, { retry: false }),
 };

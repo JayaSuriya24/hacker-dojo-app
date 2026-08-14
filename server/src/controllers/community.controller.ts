@@ -26,10 +26,6 @@ export const communityController = {
     res.json({ data: await communityService.member(req.context.user, req.params['id'] as string) });
   }),
 
-  startups: asyncHandler(async (_req: Request, res: Response) => {
-    res.json({ data: await communityService.startups() });
-  }),
-
   occupancy: asyncHandler(async (_req: Request, res: Response) => {
     // Short public cache: the dial is live-ish, and a stampede of 300 members
     // opening the app at 9am should not become 300 identical queries.

@@ -59,7 +59,7 @@ export class ErrorBoundary extends Component<Props, State> {
           gap: space[6],
         }}
       >
-        <View accessible accessibilityRole="alert" style={{ alignItems: 'center', gap: space[3] }}>
+        <View accessible role="alert" style={{ alignItems: 'center', gap: space[3] }}>
           <Text style={{ fontSize: 20, fontWeight: '500', color: lightPalette.text }}>
             Something broke
           </Text>
@@ -85,8 +85,8 @@ export class ErrorBoundary extends Component<Props, State> {
 
         <Pressable
           onPress={this.handleReset}
-          accessibilityRole="button"
-          accessibilityLabel="Reload this screen"
+          role="button"
+          aria-label="Reload this screen"
           style={{
             minHeight: 48,
             paddingHorizontal: space[7],

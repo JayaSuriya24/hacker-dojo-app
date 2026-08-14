@@ -86,8 +86,8 @@ export default function VerificationSheet() {
 
         {error ? (
           <View
-            accessibilityLiveRegion="assertive"
-            accessibilityRole="alert"
+            aria-live="assertive"
+            role="alert"
             style={{
               backgroundColor: palette.errorTint,
               borderWidth: 1,
@@ -114,7 +114,7 @@ export default function VerificationSheet() {
                   loading={uploadingKind === kind.value}
                   disabled={upload.isPending}
                   onPress={() => void submit(kind.value)}
-                  accessibilityLabel={`Upload a ${kind.label}`}
+                  aria-label={`Upload a ${kind.label}`}
                 >
                   Choose a photo
                 </Button>
@@ -124,7 +124,7 @@ export default function VerificationSheet() {
         </YStack>
 
         <YStack gap={space[3]}>
-          <Text variant="eyebrow" accessibilityRole="header">
+          <Text variant="eyebrow" role="heading">
             Submitted
           </Text>
 
@@ -171,7 +171,7 @@ export default function VerificationSheet() {
                       size="sm"
                       loading={remove.isPending && remove.variables === document.id}
                       onPress={() => remove.mutate(document.id)}
-                      accessibilityLabel={`Withdraw ${document.fileName}`}
+                      aria-label={`Withdraw ${document.fileName}`}
                     >
                       Withdraw
                     </Button>

@@ -12,17 +12,32 @@ export interface AboutView {
   press: Array<{ id: string; outlet: string; year: string; headline: string; url: string | null }>;
   board: Array<{ id: string; name: string; role: string; initials: string }>;
   faqs: Array<{ id: string; question: string; answer: string }>;
-  impact: Array<{ value: string; label: string }>;
-  pillars: Array<{ name: string; line: string }>;
+  /**
+   * `key` is the list identity, and it is sent because the client had nothing
+   * else to use. It was keying on `name` — editable free text, which two staff
+   * could set to the same thing without either of them doing anything wrong.
+   * `content_blocks` already carries `unique (slot, key)`, so the uniqueness the
+   * client needs is a constraint in the database rather than a convention.
+   */
+  pillars: Array<{ key: string; name: string; line: string }>;
 }
 
 export interface SiteSettingsView {
   /** Public facts. Always present. */
   labStatus: string | null;
   labHours: string | null;
-  /** Members only — null for a guest, which is what the UI gates on. */
+  /**
+   * The guest network. Public on purpose: its password is posted on the wall,
+   * and a visitor who cannot see it is exactly who it exists for.
+   */
+  wifiGuestSsid: string | null;
+  wifiGuestPassword: string | null;
+  /**
+   * The member network's name. Public too — knowing a network exists is not
+   * access to it. The credential that opens it is per-member and comes from
+   * `/me/wifi`, never from here.
+   */
   wifiSsid: string | null;
-  wifiPassword: string | null;
 }
 
 /** Initials from a display name, used wherever an avatar falls back. */
@@ -60,9 +75,19 @@ export const contentService = {
   /**
    * Everything the Dojo tab renders below the fold, in one round trip.
    *
-   * `impact` and `pillars` used to be literal arrays in this file, so changing
-   * "6,400+ members served" was a deploy. They are `content_blocks` rows now and
-   * come back in the same shape, which is why the client did not have to change.
+   * `pillars` used to be a literal array in this file, so changing a line was a
+   * deploy. They are `content_blocks` rows now.
+   *
+   * There is no `impact` any more. The Impact report was four figures with no
+   * source behind them; 0007 deleted three, the fourth — "years running" — was
+   * derived here from the 2009 founding, and then the section was dropped
+   * outright. Nothing consumed the field once the section was gone, so it went
+   * with it rather than staying on as a computed value with no reader.
+   *
+   * Every list here can legitimately come back empty, and after 0007 most of
+   * them do. The client renders no section rather than an empty card for each —
+   * an empty testimonials list means the Dojo has not collected a real quote
+   * yet, which is a true thing to say by saying nothing.
    */
   async about(): Promise<AboutView> {
     const [testimonials, press, board, faqs, blocks] = await Promise.all([
@@ -70,7 +95,7 @@ export const contentService = {
       contentRepository.press(),
       contentRepository.board(),
       contentRepository.faqs(),
-      contentBlockRepository.bySlots(['impact', 'pillars']),
+      contentBlockRepository.bySlots(['pillars']),
     ]);
 
     return {
@@ -95,11 +120,8 @@ export const contentService = {
         initials: initialsOf(b.name),
       })),
       faqs: faqs.map((f) => ({ id: f.id, question: f.question, answer: f.answer })),
-      impact: blocksIn(blocks, 'impact').map((block) => ({
-        value: block.label,
-        label: block.value ?? '',
-      })),
       pillars: blocksIn(blocks, 'pillars').map((block) => ({
+        key: block.key,
         name: block.label,
         line: block.value ?? '',
       })),
@@ -111,8 +133,9 @@ export const contentService = {
    *
    * The Wi-Fi password was a string literal in a mobile component, which put it
    * in every installed copy of the app and made rotating it an App Store
-   * release. It is a members-only row now, and the RLS policy — not a branch
-   * here — is what decides whether it comes back.
+   * release. Nothing secret is returned here any more: the guest password is
+   * posted on the wall, and the member credential is per-member and served from
+   * `/me/wifi` behind an active-membership check.
    */
   async settings(user: AuthenticatedUser | undefined): Promise<SiteSettingsView> {
     const rows = await siteSettingRepository.visibleTo(user?.accessToken ?? null);
@@ -122,8 +145,9 @@ export const contentService = {
     return {
       labStatus: value('lab_status'),
       labHours: value('lab_hours'),
+      wifiGuestSsid: value('wifi_guest_ssid'),
+      wifiGuestPassword: value('wifi_guest_password'),
       wifiSsid: value('wifi_ssid'),
-      wifiPassword: value('wifi_password'),
     };
   },
 

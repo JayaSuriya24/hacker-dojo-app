@@ -1,4 +1,6 @@
 import { staffRepository } from '../repositories/staff.repository.js';
+import { eventApprovalService, type ApprovalResult } from './eventApproval.service.js';
+import { logger } from '../config/logger.js';
 import { formatDojoRange } from '../utils/time.js';
 import type { AuthenticatedUser } from '../types/http.js';
 import type { ApplicationStatus, TourStatus } from '../types/database.js';
@@ -86,9 +88,41 @@ export const staffService = {
     return { id: row.id, status: row.status };
   },
 
+  /**
+   * Decide an event request, and when the answer is yes, make the event exist.
+   *
+   * Accepting used to write a status and stop, which left the member with a
+   * reference number and the calendar with nothing on it. The approval now
+   * produces what the host asked for — a single date, or a weekly series the
+   * generator expands.
+   *
+   * Fulfilment is deliberately not allowed to fail the decision: the steward's
+   * verdict is recorded either way, and a series that could not be created is a
+   * problem to fix rather than a reason to silently un-accept a request the
+   * member has already been told about.
+   */
   async setEventRequestStatus(user: AuthenticatedUser, id: string, status: ApplicationStatus) {
     const row = await staffRepository.setEventRequestStatus(user.accessToken, id, status);
-    return { id: row.id, reference: row.reference, title: row.title, status: row.status };
+
+    let scheduled: ApprovalResult | null = null;
+    if (status === 'accepted') {
+      try {
+        scheduled = await eventApprovalService.fulfil(row);
+      } catch (error) {
+        logger.error(
+          { err: error, requestId: row.id, reference: row.reference },
+          'Accepted an event request but could not put it on the calendar',
+        );
+      }
+    }
+
+    return {
+      id: row.id,
+      reference: row.reference,
+      title: row.title,
+      status: row.status,
+      scheduled,
+    };
   },
 
   async setApplicationStatus(user: AuthenticatedUser, id: string, status: ApplicationStatus) {

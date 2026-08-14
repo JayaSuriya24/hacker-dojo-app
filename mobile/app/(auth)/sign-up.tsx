@@ -5,6 +5,7 @@ import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { XStack, YStack } from 'tamagui';
 import { AuthShell } from '~/features/auth/components/AuthShell';
+import { AuthModeSwitch } from '~/features/auth/components/AuthModeSwitch';
 import { SocialSignIn } from '~/features/auth/components/SocialSignIn';
 import { authService } from '~/features/auth/services/auth.service';
 import {
@@ -33,6 +34,8 @@ export default function SignUpScreen() {
   const { data: plans } = usePlans();
   const [formError, setFormError] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
+  /** Set once the account exists but is waiting on an emailed confirmation. */
+  const [confirmationSentTo, setConfirmationSentTo] = useState<string | null>(null);
 
   const selectablePlans = (plans ?? []).filter((plan) => !plan.isAddon);
 
@@ -43,7 +46,16 @@ export default function SignUpScreen() {
     formState: { errors, isSubmitting, isValid },
   } = useForm<SignUpValues>({
     resolver: zodResolver(signUpSchema),
-    mode: 'onBlur',
+    // `onTouched`, not `onBlur`. Both hold errors back until a field has been
+    // left once — nobody should be told their email is invalid while they are
+    // still typing it — but `onBlur` recomputes `isValid` ONLY on a blur event,
+    // and two of the five fields here can never emit one: the plan is a radio
+    // row and the code-of-conduct is a checkbox, both `Pressable`s. Choosing a
+    // plan and ticking the box set their values and left `isValid` false, so a
+    // fully completed form kept a disabled button with nothing to explain it.
+    // `onTouched` re-validates on change after the first blur, which covers
+    // controls that only ever change.
+    mode: 'onTouched',
     defaultValues: { fullName: '', email: '', password: '', planId: 'standard', agree: false },
   });
 
@@ -53,29 +65,87 @@ export default function SignUpScreen() {
   const onSubmit = handleSubmit(async (values) => {
     setFormError(null);
     try {
-      await authService.signUp({
+      const { needsEmailConfirmation } = await authService.signUp({
         email: values.email,
         password: values.password,
         fullName: values.fullName,
       });
-      // Straight to checkout with the chosen plan. Supabase may still require
-      // email confirmation; the checkout screen handles that state.
-      router.replace({
-        pathname: '/(app)/checkout',
-        params: { planId: values.planId, period: 'month' },
-      });
+
+      // Without a session there is nothing to navigate to — `(app)` is behind
+      // the auth guard, so routing on would bounce straight back here and the
+      // member would see no outcome at all. Say what happened instead.
+      if (needsEmailConfirmation) {
+        setConfirmationSentTo(values.email.trim().toLowerCase());
+        return;
+      }
+
+      // Confirmed already (confirmations off). "Decide later" leaves `planId`
+      // empty, and there is nothing to check out for a plan nobody picked — so
+      // that lands in the app, where the Dojo tab's pricing table is waiting.
+      if (values.planId) {
+        router.replace({
+          pathname: '/(app)/checkout',
+          params: { planId: values.planId, period: 'month' },
+        });
+      } else {
+        router.replace('/(app)/(tabs)');
+      }
     } catch (error) {
       setFormError(userMessage(error));
     }
   });
 
+  // The account exists; it just cannot sign in until the emailed link is
+  // followed. Replacing the form rather than annotating it is deliberate —
+  // leaving the fields on screen invites a second submission, which would only
+  // return "that email already has an account".
+  if (confirmationSentTo) {
+    return (
+      <AuthShell heading="Check your email">
+        <YStack gap={space[5]} aria-live="polite" role="alert">
+          <View
+            style={{
+              // No `okTint` in the palette, so the surface carries the panel and
+              // `ok` carries the meaning — rather than inventing a colour that
+              // sits outside the ramp.
+              backgroundColor: palette.surfaceAlt,
+              borderWidth: 1,
+              borderColor: palette.ok,
+              borderRadius: radius.md,
+              padding: space[4],
+              gap: space[2],
+            }}
+          >
+            <Text variant="subtitle" tone="ok">
+              Account created
+            </Text>
+            <Text variant="small" tone="subtle">
+              We sent a confirmation link to {confirmationSentTo}. Open it to activate your account,
+              then sign in to choose how you pay.
+            </Text>
+          </View>
+
+          <Text variant="caption" tone="subtle">
+            No email after a minute or two? Check your spam folder — the link expires in 24 hours.
+          </Text>
+
+          <Button variant="primary" onPress={() => router.replace('/(auth)/sign-in')}>
+            Go to sign in
+          </Button>
+        </YStack>
+      </AuthShell>
+    );
+  }
+
   return (
     <AuthShell heading="Create your membership">
       <YStack gap={space[5]}>
+        <AuthModeSwitch mode="signUp" />
+
         {formError ? (
           <View
-            accessibilityLiveRegion="assertive"
-            accessibilityRole="alert"
+            aria-live="assertive"
+            role="alert"
             style={{
               backgroundColor: palette.errorTint,
               borderWidth: 1,
@@ -158,7 +228,7 @@ export default function SignUpScreen() {
               {/* Strength meter. Indicative — the schema is what gates submit,
                   and the hint text carries the same information as the bars for
                   anyone who cannot distinguish the colours. */}
-              <YStack gap={space[2]} accessibilityElementsHidden>
+              <YStack gap={space[2]} aria-hidden>
                 <XStack gap={space[1]}>
                   {[0, 1, 2, 3].map((index) => (
                     <View
@@ -190,11 +260,16 @@ export default function SignUpScreen() {
           name="planId"
           render={({ field: { onChange, value } }) => (
             <YStack gap={space[3]}>
-              <Text variant="eyebrow" tone="subtle">
-                Choose a plan
-              </Text>
+              <YStack gap={space[1]}>
+                <Text variant="eyebrow" tone="subtle">
+                  Choose a plan
+                </Text>
+                <Text variant="caption" tone="subtle">
+                  Optional — you can join now and pick a plan whenever you are ready.
+                </Text>
+              </YStack>
 
-              <YStack gap={space[2]} accessibilityRole="radiogroup">
+              <YStack gap={space[2]} role="radiogroup">
                 {selectablePlans.map((plan) => {
                   const selected = plan.id === value;
 
@@ -202,10 +277,10 @@ export default function SignUpScreen() {
                     <Pressable
                       key={plan.id}
                       onPress={() => onChange(plan.id)}
-                      accessibilityRole="radio"
-                      accessibilityLabel={`${plan.name}, ${formatCurrency(plan.priceMonthlyCents)} per month`}
+                      role="radio"
+                      aria-label={`${plan.name}, ${formatCurrency(plan.priceMonthlyCents)} per month`}
                       accessibilityHint={plan.description}
-                      accessibilityState={{ selected }}
+                      aria-selected={selected}
                       style={{
                         minHeight: 56,
                         flexDirection: 'row',
@@ -251,6 +326,57 @@ export default function SignUpScreen() {
                     </Pressable>
                   );
                 })}
+
+                {/*
+                  The way out of the purchase decision. Same row shape as the
+                  plans so it reads as one of the choices rather than a way to
+                  dismiss them, and no price because there is nothing to pay.
+                */}
+                <Pressable
+                  onPress={() => onChange('')}
+                  role="radio"
+                  aria-label="Decide later, no plan yet"
+                  accessibilityHint="Create your account now and choose a plan when you are ready."
+                  aria-selected={value === ''}
+                  style={{
+                    minHeight: 56,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: space[4],
+                    paddingHorizontal: space[4],
+                    paddingVertical: space[3],
+                    borderRadius: radius.md,
+                    borderWidth: 1,
+                    borderColor: value === '' ? palette.accent : palette.border,
+                    backgroundColor: value === '' ? palette.accentTint : palette.surfaceAlt,
+                  }}
+                >
+                  <View
+                    style={{
+                      width: 19,
+                      height: 19,
+                      borderRadius: radius.pill,
+                      borderWidth: 1,
+                      borderColor: value === '' ? palette.accent : palette.border,
+                      backgroundColor: value === '' ? palette.accent : 'transparent',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    {value === '' ? (
+                      <Text variant="caption" tone="onAccent">
+                        ✓
+                      </Text>
+                    ) : null}
+                  </View>
+
+                  <YStack flex={1} gap={space[1]}>
+                    <Text variant="body">Decide later</Text>
+                    <Text variant="caption" tone="subtle">
+                      Join now and pick a plan when you are ready.
+                    </Text>
+                  </YStack>
+                </Pressable>
               </YStack>
             </YStack>
           )}
@@ -263,9 +389,9 @@ export default function SignUpScreen() {
             <YStack gap={space[2]}>
               <Pressable
                 onPress={() => onChange(!value)}
-                accessibilityRole="checkbox"
-                accessibilityLabel="I agree to the community code of conduct and the safety rules for shop equipment"
-                accessibilityState={{ checked: Boolean(value) }}
+                role="checkbox"
+                aria-label="I agree to the community code of conduct and the safety rules for shop equipment"
+                aria-checked={Boolean(value)}
                 style={{ minHeight: 44 }}
               >
                 <XStack gap={space[3]} alignItems="flex-start" paddingVertical={space[2]}>
@@ -296,7 +422,7 @@ export default function SignUpScreen() {
               </Pressable>
 
               {errors.agree?.message ? (
-                <View accessibilityLiveRegion="assertive">
+                <View aria-live="assertive">
                   <Text variant="caption" tone="error">
                     {errors.agree.message}
                   </Text>

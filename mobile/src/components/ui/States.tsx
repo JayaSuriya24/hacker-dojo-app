@@ -55,8 +55,7 @@ export function Skeleton({
 
   return (
     <Animated.View
-      accessibilityElementsHidden
-      importantForAccessibility="no-hide-descendants"
+      aria-hidden
       style={{ width, height, borderRadius, backgroundColor: palette.skeleton, opacity: pulse }}
     />
   );
@@ -65,7 +64,7 @@ export function Skeleton({
 /** Card-shaped skeletons, matching the real list item's rhythm. */
 export function ListSkeleton({ count = 3, height = 96 }: { count?: number; height?: number }) {
   return (
-    <YStack gap={space[4]} accessibilityLabel="Loading" accessibilityRole="progressbar">
+    <YStack gap={space[4]} aria-label="Loading" role="progressbar">
       {Array.from({ length: count }, (_, index) => (
         <Skeleton key={index} height={height} borderRadius={radius.lg} />
       ))}
@@ -81,8 +80,8 @@ export function LoadingState({ label = 'Loading' }: { label?: string }) {
       paddingVertical={space[14]}
       alignItems="center"
       gap={space[4]}
-      accessibilityRole="progressbar"
-      accessibilityLabel={label}
+      role="progressbar"
+      aria-label={label}
     >
       <ActivityIndicator color={palette.accent} />
       <Text variant="caption" tone="subtle">
@@ -108,7 +107,7 @@ export function EmptyState({ title, description, actionLabel, onAction, icon }: 
       alignItems="center"
       gap={space[3]}
     >
-      {icon ? <View accessibilityElementsHidden>{icon}</View> : null}
+      {icon ? <View aria-hidden>{icon}</View> : null}
       <Text variant="subtitle" center>
         {title}
       </Text>
@@ -142,7 +141,7 @@ export function ErrorState({ error, onRetry }: { error: unknown; onRetry?: () =>
       paddingHorizontal={space[6]}
       alignItems="center"
       gap={space[3]}
-      accessibilityLiveRegion="polite"
+      aria-live="polite"
     >
       <View
         style={{
@@ -154,7 +153,7 @@ export function ErrorState({ error, onRetry }: { error: unknown; onRetry?: () =>
           alignItems: 'center',
           justifyContent: 'center',
         }}
-        accessibilityElementsHidden
+        aria-hidden
       >
         <Text variant="title" tone="error">
           !

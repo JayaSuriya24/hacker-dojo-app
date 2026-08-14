@@ -30,6 +30,8 @@ export const queryKeys = {
     list: (kind?: string) => ['resources', 'list', kind ?? 'all'] as const,
     availability: (resourceId: string, day: string) =>
       ['resources', 'availability', resourceId, day] as const,
+    /** Today's reservations for a kind of resource, as everyone sees them. */
+    schedule: (kind: string) => ['resources', 'schedule', kind] as const,
   },
 
   community: {
@@ -37,7 +39,9 @@ export const queryKeys = {
     directory: (filters: { search?: string; skills?: string[]; here?: boolean }) =>
       ['community', 'directory', filters] as const,
     member: (id: string) => ['community', 'member', id] as const,
-    startups: () => ['community', 'startups'] as const,
+    startups: (filters?: { search?: string; stage?: string; hiring?: string }) =>
+      ['community', 'startups', filters ?? {}] as const,
+    startup: (key: string) => ['community', 'startup', key] as const,
   },
 
   dojo: {
@@ -51,8 +55,7 @@ export const queryKeys = {
 
   access: {
     all: () => ['access'] as const,
-    key: () => ['access', 'key'] as const,
-    history: () => ['access', 'history'] as const,
+    wifi: () => ['access', 'wifi'] as const,
   },
 
   uploads: {

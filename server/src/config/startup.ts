@@ -1,5 +1,5 @@
 import { adminClient } from './supabase.js';
-import { stripe } from './stripe.js';
+import { isStripeConfigured, stripe } from './stripe.js';
 import { logger } from './logger.js';
 
 /**
@@ -74,14 +74,22 @@ export async function verifyStartupDependencies(): Promise<StartupReport> {
         }
       },
     },
-    {
-      // A revoked or wrong-mode Stripe key fails here rather than at checkout.
-      // Listing one price is the cheapest authenticated call that does not need
-      // an account id we would otherwise have to configure.
+  ];
+
+  // A revoked or wrong-mode Stripe key fails here rather than at checkout.
+  // Listing one price is the cheapest authenticated call that does not need an
+  // account id we would otherwise have to configure. Skipped when payments are
+  // deliberately unconfigured: outside production that is a supported state —
+  // `requireStripe` answers 503 on /payments/* and the rest of the API runs —
+  // so checking the placeholder key would fail a boot that is meant to succeed.
+  if (isStripeConfigured) {
+    checks.push({
       name: 'stripe.credentials',
       run: () => stripe.prices.list({ limit: 1 }),
-    },
-  ];
+    });
+  } else {
+    logger.warn('Stripe is not configured — skipping credential check; /payments/* will 503');
+  }
 
   const failures: Array<{ check: string; reason: string }> = [];
   const checked: string[] = [];

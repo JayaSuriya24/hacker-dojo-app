@@ -11,6 +11,7 @@ import {
 } from '~/features/auth/validation/auth.schemas';
 import { Button, Card, Text, TextField } from '~/components/ui';
 import { space } from '~/theme/tokens';
+import { AUTH_HOME, goBackOr } from '~/utils/navigation';
 
 /**
  * Password reset request.
@@ -30,7 +31,9 @@ export default function ForgotPasswordScreen() {
     formState: { errors, isSubmitting, isValid },
   } = useForm<ForgotPasswordValues>({
     resolver: zodResolver(forgotPasswordSchema),
-    mode: 'onBlur',
+    // See sign-in: with a single field, `onBlur` means the button is still
+    // disabled at the moment someone finishes typing and reaches for it.
+    mode: 'onTouched',
     defaultValues: { email: '' },
   });
 
@@ -108,7 +111,7 @@ export default function ForgotPasswordScreen() {
           {isSubmitting ? 'Sending…' : 'Send reset link'}
         </Button>
 
-        <Button variant="ghost" fullWidth onPress={() => router.back()}>
+        <Button variant="ghost" fullWidth onPress={() => goBackOr(AUTH_HOME)}>
           Back to sign in
         </Button>
       </YStack>

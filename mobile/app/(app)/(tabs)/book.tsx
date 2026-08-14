@@ -76,14 +76,14 @@ export default function BookScreen() {
       key={resource.id}
       onPress={() => openBooking(resource)}
       disabled={resource.status === 'maintenance'}
-      accessibilityRole="button"
-      accessibilityLabel={`${resource.name}. ${STATUS_LABEL[resource.status]}.${
+      role="button"
+      aria-label={`${resource.name}. ${STATUS_LABEL[resource.status]}.${
         resource.requiresCert ? ' Certification required.' : ''
       }`}
       accessibilityHint={
         resource.status === 'maintenance' ? 'Unavailable' : 'Opens the booking sheet'
       }
-      accessibilityState={{ disabled: resource.status === 'maintenance' }}
+      aria-disabled={resource.status === 'maintenance'}
     >
       <Card interactive opacity={resource.status === 'maintenance' ? 0.6 : 1}>
         <XStack alignItems="center" gap={space[3]}>
@@ -129,7 +129,7 @@ export default function BookScreen() {
       <ScreenHeader eyebrow="Reserve" title="Hardware & space" />
 
       <Segmented
-        accessibilityLabel="What to book"
+        aria-label="What to book"
         options={[
           { value: 'hardware', label: 'Hardware' },
           { value: 'rooms', label: 'Rooms' },
@@ -195,7 +195,7 @@ export default function BookScreen() {
                         params: { bookingId: booking.id },
                       })
                     }
-                    accessibilityLabel={`Modify your reservation for ${booking.resourceName}`}
+                    aria-label={`Modify your reservation for ${booking.resourceName}`}
                   >
                     Modify
                   </Button>
@@ -206,7 +206,7 @@ export default function BookScreen() {
                     fullWidth
                     loading={cancelBooking.isPending && cancelBooking.variables === booking.id}
                     onPress={() => cancelBooking.mutate(booking.id)}
-                    accessibilityLabel={`Cancel your reservation for ${booking.resourceName}`}
+                    aria-label={`Cancel your reservation for ${booking.resourceName}`}
                   >
                     Cancel
                   </Button>

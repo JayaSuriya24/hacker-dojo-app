@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { communityApi, type DirectoryFilters } from '../api/community.api';
 import { queryKeys } from '~/services/queryKeys';
 import { QUERY_STALE_TIME } from '~/constants/config';
 import { useIsActiveMember } from '~/features/profile/hooks/useProfile';
+import type { StartupInput } from '~/types/domain';
 
 /**
  * Debounce a value.
@@ -60,12 +61,71 @@ export function useMember(id: string) {
   });
 }
 
-export function useStartups() {
+/**
+ * The public startup list.
+ *
+ * Static stale time as before — a curated list changes when a steward changes
+ * it, not on its own. Filters are part of the key so each combination caches
+ * separately instead of clobbering the unfiltered list.
+ */
+export function useStartups(filters?: { search?: string; stage?: string; hiring?: string }) {
+  const query = {
+    ...(filters?.search ? { search: filters.search } : {}),
+    ...(filters?.stage ? { stage: filters.stage } : {}),
+    ...(filters?.hiring ? { hiring: filters.hiring } : {}),
+  };
+
   return useQuery({
-    queryKey: queryKeys.community.startups(),
-    queryFn: communityApi.startups,
+    queryKey: queryKeys.community.startups(query),
+    queryFn: () => communityApi.startups(query),
     staleTime: QUERY_STALE_TIME.static,
   });
+}
+
+/** One startup, by uuid or slug. Public, so no membership gate. */
+export function useStartup(key: string) {
+  return useQuery({
+    queryKey: queryKeys.community.startup(key),
+    queryFn: () => communityApi.startup(key),
+    enabled: Boolean(key),
+    staleTime: QUERY_STALE_TIME.static,
+  });
+}
+
+/**
+ * Staff writes.
+ *
+ * Each invalidates every startup query — list, filtered lists and details —
+ * because a rename changes a slug and a reorder changes every row's position,
+ * so patching one cache entry would leave the others disagreeing.
+ */
+function useStartupMutation<TArgs, TResult>(fn: (args: TArgs) => Promise<TResult>) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: fn,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.community.all() });
+    },
+  });
+}
+
+export function useCreateStartup() {
+  return useStartupMutation((input: StartupInput) => communityApi.createStartup(input));
+}
+
+export function useUpdateStartup() {
+  return useStartupMutation((args: { id: string; patch: Partial<StartupInput> }) =>
+    communityApi.updateStartup(args.id, args.patch),
+  );
+}
+
+export function useDeleteStartup() {
+  return useStartupMutation((id: string) => communityApi.deleteStartup(id));
+}
+
+export function useReorderStartups() {
+  return useStartupMutation((orderedIds: string[]) => communityApi.reorderStartups(orderedIds));
 }
 
 /** Live occupancy. Polls while the app is foregrounded — the dial is the point. */
@@ -98,7 +158,19 @@ export function useAbout() {
 }
 
 export function useBookTour() {
-  return useMutation({ mutationFn: communityApi.bookTour });
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: communityApi.bookTour,
+    /**
+     * `hasBookedTour` lives on the profile, and the tour invitation across the
+     * app is rendered from it. Without this the guest books a tour, dismisses
+     * the sheet, and is invited to take a tour again by the screen underneath.
+     */
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.me.profile() });
+    },
+  });
 }
 
 /**

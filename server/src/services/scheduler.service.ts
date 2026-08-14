@@ -1,6 +1,7 @@
 import { env } from '../config/env.js';
 import { logger } from '../config/logger.js';
 import { occupancyRepository } from '../repositories/staff.repository.js';
+import { eventSeriesRepository } from '../repositories/eventSeries.repository.js';
 import { notificationService } from './notification.service.js';
 import { toDojoWallClock } from '../utils/time.js';
 
@@ -60,6 +61,13 @@ async function guard(name: string, task: () => Promise<unknown>): Promise<void> 
 export const schedulerService = {
   /** Append one occupancy sample per zone, then trim the history. */
   async sampleOccupancy(): Promise<number> {
+    // Before counting, close the sessions that have run out. They are already
+    // excluded from the count, so this does not change the sample — it stops
+    // them holding the one-live-session-per-member index slot, which is what
+    // otherwise locks a member out of checking in the next day.
+    const closed = await occupancyRepository.endExpiredSessions();
+    if (closed > 0) logger.info({ closed }, 'Closed expired sessions');
+
     const zones = await occupancyRepository.sample();
 
     // Pruning is cheap and only matters occasionally; running it on the same
@@ -98,6 +106,19 @@ export const schedulerService = {
   },
 
   /**
+   * Materialise upcoming dates for every active series.
+   *
+   * Idempotent by the unique index on `(series_id, occurrence_date)`, so
+   * running it on a timer cannot produce a second copy of next Tuesday — and a
+   * missed tick costs nothing, because the next one generates the same set.
+   */
+  async generateSeriesOccurrences(): Promise<number> {
+    const created = await eventSeriesRepository.generateAll();
+    if (created > 0) logger.info({ created }, 'Generated event occurrences');
+    return created;
+  },
+
+  /**
    * Start the timers.
    *
    * Returns a stop function so the process can drain cleanly on SIGTERM rather
@@ -122,6 +143,10 @@ export const schedulerService = {
     every(env.OCCUPANCY_SAMPLE_INTERVAL_MS, 'occupancy', () => this.sampleOccupancy());
     every(60_000, 'reminders', () => this.sendDueReminders());
     every(15 * 60_000, 'digest', () => this.maybeSendDigest());
+    // Hourly is ample for a horizon measured in months; it exists so an
+    // open-ended weekly series keeps producing dates without anyone
+    // remembering to top it up.
+    every(60 * 60_000, 'event-series', () => this.generateSeriesOccurrences());
 
     logger.info({ occupancyIntervalMs: env.OCCUPANCY_SAMPLE_INTERVAL_MS }, 'Scheduler started');
 

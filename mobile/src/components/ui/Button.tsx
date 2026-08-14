@@ -23,7 +23,7 @@ import { pressableFocusRing } from '~/theme/focus';
  * the type name says so, so choosing it is deliberate rather than habitual.
  *
  * Accessibility is built in rather than left to call sites: a minimum 48pt
- * target (satisfies both HIG's 44 and Material's 48), `accessibilityRole`, a
+ * target (satisfies both HIG's 44 and Material's 48), `role`, a
  * busy/disabled state that screen readers announce, and the system's own
  * `:focus-visible` ring.
  */
@@ -60,7 +60,7 @@ export const Button = forwardRef<View, ButtonProps>(function Button(
     haptic = 'light',
     disabled,
     onPress,
-    accessibilityLabel,
+    'aria-label': ariaLabel,
     ...rest
   },
   ref,
@@ -126,11 +126,12 @@ export const Button = forwardRef<View, ButtonProps>(function Button(
       ref={ref}
       onPress={handlePress}
       disabled={isDisabled}
-      accessibilityRole="button"
-      accessibilityLabel={accessibilityLabel ?? children}
+      role="button"
+      aria-label={ariaLabel ?? children}
       // Announces "dimmed" / "disabled" and the busy state to VoiceOver and
       // TalkBack rather than leaving a visually-greyed control unexplained.
-      accessibilityState={{ disabled: isDisabled, busy: loading }}
+      aria-disabled={isDisabled}
+      aria-busy={loading}
       style={(state) => [
         {
           minHeight: metrics.height,

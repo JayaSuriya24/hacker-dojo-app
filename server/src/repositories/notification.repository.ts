@@ -19,6 +19,41 @@ export interface MembershipReminderRow {
   cancel_at_period_end: boolean;
 }
 
+interface PreferenceRow {
+  profile_id: string;
+  push_token: string | null;
+  bookings: boolean;
+}
+
+/**
+ * Notification preferences for a set of profiles, keyed by profile id.
+ *
+ * Fetched on their own rather than embedded in the query that needs them.
+ * `bookings`, `memberships` and `notification_preferences` all reference
+ * `profiles`, but none of them reference each other, so there is no path for
+ * PostgREST to embed one from another. Asking for it anyway — as
+ * `notification_preferences:profile_id(push_token, …)` — resolved the embed
+ * against `profiles` via the `profile_id` foreign key and failed every run with
+ * "column profiles_1.push_token does not exist", which meant no booking or
+ * membership reminder was ever sent. A second round trip once a minute is the
+ * price of a relationship the schema does not have.
+ */
+async function preferencesByProfile(profileIds: string[]): Promise<Map<string, PreferenceRow>> {
+  const unique = [...new Set(profileIds)];
+  if (unique.length === 0) return new Map();
+
+  const rows = unwrapList(
+    await adminClient
+      .from('notification_preferences')
+      .select('profile_id, push_token, bookings')
+      .in('profile_id', unique)
+      .returns<PreferenceRow[]>(),
+    'Could not load notification preferences.',
+  );
+
+  return new Map(rows.map((row) => [row.profile_id, row]));
+}
+
 /**
  * Push delivery state.
  *
@@ -34,6 +69,44 @@ export const notificationRepository = {
    * member who turned a channel off is never loaded into memory as a candidate
    * in the first place.
    */
+  /**
+   * Everyone who should be emailed about a new event.
+   *
+   * Deliberately an OPT-OUT, which is the opposite of `audienceFor` below and
+   * is the whole reason this is a separate query. That one starts from
+   * `notification_preferences` and keeps rows where the channel is true — fine
+   * for push, where a row only exists once a device has registered a token.
+   * Email has no such prerequisite: every profile has an address from the day
+   * it is created, and preference rows are NOT written on signup. Filtering the
+   * same way would silently skip anyone who has never opened the settings
+   * screen, which today is one profile in four.
+   *
+   * So: start from profiles, and remove only those who explicitly turned event
+   * mail off. Never having expressed a preference is not the same as declining.
+   */
+  async emailAudienceForEvents(): Promise<Array<{ id: string; email: string; full_name: string }>> {
+    const profiles = await unwrapList(
+      await adminClient
+        .from('profiles')
+        .select('id, email, full_name')
+        .returns<Array<{ id: string; email: string; full_name: string }>>(),
+      'Could not load the announcement audience.',
+    );
+
+    const declined = await unwrapList(
+      await adminClient
+        .from('notification_preferences')
+        .select('profile_id')
+        .eq('events', false)
+        .returns<Array<{ profile_id: string }>>(),
+      'Could not load notification preferences.',
+    );
+
+    const optedOut = new Set(declined.map((row) => row.profile_id));
+
+    return profiles.filter((profile) => Boolean(profile.email) && !optedOut.has(profile.id));
+  },
+
   async audienceFor(channel: 'events' | 'bookings' | 'weekly_digest'): Promise<PushTargetRow[]> {
     return unwrapList(
       await adminClient
@@ -117,9 +190,7 @@ export const notificationRepository = {
     const rows = unwrapList(
       await adminClient
         .from('bookings')
-        .select(
-          'id, profile_id, starts_at, ends_at, resources(name), notification_preferences:profile_id(push_token, bookings)',
-        )
+        .select('id, profile_id, starts_at, ends_at, resources(name)')
         .eq('status', 'confirmed')
         .gte('starts_at', now.toISOString())
         .lte('starts_at', horizon.toISOString())
@@ -130,24 +201,30 @@ export const notificationRepository = {
             starts_at: string;
             ends_at: string;
             resources: { name: string } | null;
-            notification_preferences: { push_token: string | null; bookings: boolean } | null;
           }>
         >(),
       'Could not load bookings needing a reminder.',
     );
 
-    return rows
-      .filter(
-        (row) => row.notification_preferences?.bookings && row.notification_preferences.push_token,
-      )
-      .map((row) => ({
-        booking_id: row.id,
-        profile_id: row.profile_id,
-        push_token: row.notification_preferences?.push_token as string,
-        resource_name: row.resources?.name ?? 'Your reservation',
-        starts_at: row.starts_at,
-        ends_at: row.ends_at,
-      }));
+    const preferences = await preferencesByProfile(rows.map((row) => row.profile_id));
+
+    return rows.flatMap((row) => {
+      const preference = preferences.get(row.profile_id);
+      // Consent and a live token are both required, and the token is narrowed
+      // here so the mapping below does not have to assert it.
+      if (!preference?.bookings || !preference.push_token) return [];
+
+      return [
+        {
+          booking_id: row.id,
+          profile_id: row.profile_id,
+          push_token: preference.push_token,
+          resource_name: row.resources?.name ?? 'Your reservation',
+          starts_at: row.starts_at,
+          ends_at: row.ends_at,
+        },
+      ];
+    });
   },
 
   /** Memberships whose period ends inside the window, for members with a token. */
@@ -158,9 +235,7 @@ export const notificationRepository = {
     const rows = unwrapList(
       await adminClient
         .from('memberships')
-        .select(
-          'id, profile_id, current_period_end, cancel_at_period_end, notification_preferences:profile_id(push_token)',
-        )
+        .select('id, profile_id, current_period_end, cancel_at_period_end')
         .in('status', ['active', 'trialing'])
         .not('current_period_end', 'is', null)
         .gte('current_period_end', now.toISOString())
@@ -171,20 +246,29 @@ export const notificationRepository = {
             profile_id: string;
             current_period_end: string;
             cancel_at_period_end: boolean;
-            notification_preferences: { push_token: string | null } | null;
           }>
         >(),
       'Could not load memberships needing a reminder.',
     );
 
-    return rows
-      .filter((row) => row.notification_preferences?.push_token)
-      .map((row) => ({
-        membership_id: row.id,
-        profile_id: row.profile_id,
-        push_token: row.notification_preferences?.push_token as string,
-        current_period_end: row.current_period_end,
-        cancel_at_period_end: row.cancel_at_period_end,
-      }));
+    const preferences = await preferencesByProfile(rows.map((row) => row.profile_id));
+
+    // No consent flag here on purpose: a membership about to lapse is account
+    // news rather than a channel someone opted into, so a live token is the
+    // only condition.
+    return rows.flatMap((row) => {
+      const pushToken = preferences.get(row.profile_id)?.push_token;
+      if (!pushToken) return [];
+
+      return [
+        {
+          membership_id: row.id,
+          profile_id: row.profile_id,
+          push_token: pushToken,
+          current_period_end: row.current_period_end,
+          cancel_at_period_end: row.cancel_at_period_end,
+        },
+      ];
+    });
   },
 };

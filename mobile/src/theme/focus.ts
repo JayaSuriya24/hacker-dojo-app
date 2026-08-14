@@ -28,6 +28,25 @@ export function focusRing(palette: Palette): ViewStyle {
   } as ViewStyle;
 }
 
+/**
+ * Removes the browser's own focus ring from an element we ring ourselves.
+ *
+ * `outlineWidth: 0` alone does not do it. Chrome's default for a focused input
+ * is `outline-style: auto`, and for `auto` it paints the platform ring and
+ * ignores the declared width — so the ring survives a zeroed width and only
+ * `outline-style: none` clears it.
+ *
+ * Cast because React Native types the style as solid/dotted/dashed only, while
+ * react-native-web forwards the value straight to CSS where `none` is valid.
+ * Inert on native, where outline properties do not apply.
+ */
+export const noFocusRing = {
+  outlineStyle: 'none',
+  outlineWidth: 0,
+  // Narrowed to the two properties rather than `ViewStyle`, so it spreads into
+  // a `TextStyle` (the input) as readily as a view's.
+} as unknown as { outlineStyle: 'solid'; outlineWidth: number };
+
 /** The Tamagui `focusStyle` shape, addressing theme tokens rather than values. */
 export const focusStyle = {
   outlineColor: '$accent',

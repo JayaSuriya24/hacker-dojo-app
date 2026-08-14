@@ -1,6 +1,5 @@
 import { useMemo, useState } from 'react';
 import { Pressable, ScrollView, View } from 'react-native';
-import { router } from 'expo-router';
 import { XStack, YStack } from 'tamagui';
 import { SheetScreen } from '~/components/SheetScreen';
 import { Button, Text } from '~/components/ui';
@@ -9,6 +8,7 @@ import { usePalette } from '~/providers/ThemeProvider';
 import { userMessage } from '~/services/api/errors';
 import { nextDays } from '~/utils/format';
 import { radius, space } from '~/theme/tokens';
+import { goBackOr } from '~/utils/navigation';
 
 const TIMES = [
   { label: '1:00 PM', hour: 13, minute: 0 },
@@ -72,7 +72,7 @@ export default function TourSheet() {
             Ask for the steward at the front desk. It takes about thirty minutes.
           </Text>
           <YStack alignSelf="stretch" marginTop={space[4]}>
-            <Button variant="primary" fullWidth onPress={() => router.back()}>
+            <Button variant="primary" fullWidth onPress={() => goBackOr()}>
               Done
             </Button>
           </YStack>
@@ -101,8 +101,8 @@ export default function TourSheet() {
       <YStack gap={space[6]}>
         {error ? (
           <View
-            accessibilityLiveRegion="assertive"
-            accessibilityRole="alert"
+            aria-live="assertive"
+            role="alert"
             style={{
               backgroundColor: palette.errorTint,
               borderWidth: 1,
@@ -133,13 +133,13 @@ export default function TourSheet() {
                 <Pressable
                   key={day.key}
                   onPress={() => setDayIndex(index)}
-                  accessibilityRole="button"
-                  accessibilityLabel={day.date.toLocaleDateString(undefined, {
+                  role="button"
+                  aria-label={day.date.toLocaleDateString(undefined, {
                     weekday: 'long',
                     month: 'long',
                     day: 'numeric',
                   })}
-                  accessibilityState={{ selected }}
+                  aria-selected={selected}
                   style={{
                     minWidth: 52,
                     minHeight: 56,
@@ -174,9 +174,9 @@ export default function TourSheet() {
                 <Pressable
                   key={time.label}
                   onPress={() => setTimeIndex(index)}
-                  accessibilityRole="button"
-                  accessibilityLabel={time.label}
-                  accessibilityState={{ selected }}
+                  role="button"
+                  aria-label={time.label}
+                  aria-selected={selected}
                   style={{
                     width: '31.5%',
                     minHeight: 46,

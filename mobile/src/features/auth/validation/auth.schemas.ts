@@ -59,7 +59,14 @@ export const signUpSchema = z.object({
     .max(120, 'That name is too long.'),
   email: emailSchema,
   password: passwordSchema,
-  planId: z.string().min(1, 'Choose a plan.'),
+  /**
+   * Empty means "decide later", which is a real answer rather than a missing
+   * one — an account is useful before a membership is bought, and requiring a
+   * plan here turns a free signup into a purchase decision. The "Decide later"
+   * row sets it, and the submit handler routes on it: a plan goes to checkout,
+   * no plan goes into the app.
+   */
+  planId: z.string(),
   // `boolean().refine(...)` rather than `literal(true)`: the literal's INPUT
   // type is `true`, which makes an unchecked default (`false`) a type error in
   // the form's defaultValues. This keeps the input `boolean` and still refuses

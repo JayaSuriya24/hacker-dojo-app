@@ -12,6 +12,7 @@ import { periodLabel, priceFor } from '~/features/payments/billingPeriod';
 import { formatCurrency } from '~/utils/format';
 import { radius, space } from '~/theme/tokens';
 import type { BillingPeriod } from '~/types/domain';
+import { goBackOr } from '~/utils/navigation';
 
 /**
  * Membership checkout.
@@ -64,7 +65,7 @@ export default function CheckoutSheet() {
               variant="primary"
               fullWidth
               onPress={() => {
-                router.back();
+                goBackOr();
                 router.replace('/(app)/(tabs)');
               }}
             >
@@ -120,8 +121,8 @@ export default function CheckoutSheet() {
       <YStack gap={space[5]}>
         {error ? (
           <View
-            accessibilityLiveRegion="assertive"
-            accessibilityRole="alert"
+            aria-live="assertive"
+            role="alert"
             style={{
               backgroundColor: palette.errorTint,
               borderWidth: 1,
@@ -175,12 +176,18 @@ export default function CheckoutSheet() {
           the paid period. No long-term contract.
         </Text>
 
+        {/*
+          This used to say the rate "applies from your next invoice", which is
+          not what happens: `createMembershipIntent` charges
+          `plan.price_monthly_cents` — the discounted figure — on this screen,
+          before any document exists. Verification is a review a steward does
+          afterwards, and it has no billing effect of its own.
+        */}
         {plan.requiresProof ? (
           <Card tone="alt">
             <Text variant="small" tone="muted">
-              This rate needs verification. Upload a current student ID or a DD-214 from Profile &
-              settings after joining — usually same-day, and the rate applies from your next
-              invoice.
+              This rate needs verification. You are charged the discounted rate now — upload your
+              proof from Profile & settings after joining and a steward will review it.
             </Text>
           </Card>
         ) : null}

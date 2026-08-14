@@ -17,7 +17,30 @@ export type ResourceKind = 'hardware' | 'room';
 export type ResourceStatus = 'available' | 'in_use' | 'maintenance';
 export type BookingStatus = 'confirmed' | 'cancelled' | 'completed' | 'no_show';
 export type RsvpStatus = 'going' | 'waitlisted' | 'cancelled';
-export type EventCategory = 'Hackathons' | 'Hardware' | 'AI/ML' | 'Community';
+/**
+ * The `event_category` enum, in its database order.
+ *
+ * A value list rather than a bare union so the validator and anything else that
+ * needs to enumerate them derives from one declaration. Two hand-written copies
+ * of the same set is how a category becomes acceptable to the API and invisible
+ * in the app.
+ */
+export const EVENT_CATEGORIES = [
+  'Hackathons',
+  'Hardware',
+  'AI/ML',
+  'Community',
+  'Workshops',
+  'Talks',
+  'Meetups',
+  'Social',
+  'Startups',
+  'Robotics',
+  'Security',
+  'Open House',
+] as const;
+
+export type EventCategory = (typeof EVENT_CATEGORIES)[number];
 export type EventStatus = 'draft' | 'pending_review' | 'published' | 'cancelled';
 export type ApplicationStatus = 'submitted' | 'in_review' | 'accepted' | 'rejected' | 'withdrawn';
 export type PaymentStatus = 'requires_payment' | 'processing' | 'succeeded' | 'failed' | 'refunded';
@@ -39,6 +62,8 @@ export interface ProfileRow {
   member_since: string | null;
   created_at: string;
   updated_at: string;
+  /** Null until the onboarding prompt has run once. */
+  skills_prompted_at: string | null;
 }
 
 export interface PlanRow {
@@ -54,6 +79,8 @@ export interface PlanRow {
   requires_proof: boolean;
   sort_order: number;
   active: boolean;
+  /** The bullet list on the plan card, in display order. */
+  benefits: string[];
 }
 
 export interface MembershipRow {
@@ -133,6 +160,27 @@ export interface EventFeedRow {
   waitlist_count: number;
   at_capacity: boolean;
   is_today: boolean;
+  /** Set when this event is one date of a recurring series. */
+  series_id: string | null;
+  occurrence_date: string | null;
+}
+
+export type SeriesStatus = 'active' | 'paused' | 'ended';
+
+export interface EventSeriesRow {
+  id: string;
+  slug_prefix: string;
+  title: string;
+  interval_weeks: number;
+  /** Postgres `dow`: 0 = Sunday … 6 = Saturday. */
+  weekdays: number[];
+  starts_time: string;
+  duration_minutes: number;
+  timezone: string;
+  starts_on: string;
+  until_date: string | null;
+  max_occurrences: number | null;
+  status: SeriesStatus;
 }
 
 export interface EventRsvpRow {
@@ -212,6 +260,8 @@ export interface PaymentRow {
 
 export interface StartupRow {
   id: string;
+  /** Added by the startup-management migration; the addressable form of `name`. */
+  slug: string;
   name: string;
   mark: string;
   tagline: string;
@@ -275,9 +325,22 @@ export interface EventRequestRow {
   preferred_room: string;
   notes: string | null;
   status: ApplicationStatus;
+  /** The clock the host asked for; an event cannot be built from a date alone. */
+  preferred_time: string;
+  duration_minutes: number;
+  repeat_mode: EventRepeatMode;
+  /** Postgres `dow`: 0 = Sunday … 6 = Saturday. Empty for a one-off. */
+  repeat_weekdays: number[];
+  repeat_interval_weeks: number;
+  repeat_until: string | null;
+  /** What approval produced, so approving twice cannot duplicate the event. */
+  created_event_id: string | null;
+  created_series_id: string | null;
   created_at: string;
   updated_at: string;
 }
+
+export type EventRepeatMode = 'once' | 'weekly';
 
 // ---------------------------------------------------------------------------
 // Production hardening — rows and views added by
@@ -314,6 +377,14 @@ export interface DoorCredentialRow {
   revoked_at: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface WifiCredentialRow {
+  profile_id: string;
+  /** Five digits. The username that pairs with it is the profile's email. */
+  pin: string;
+  issued_at: string;
+  rotated_at: string | null;
 }
 
 export interface DoorAccessLogRow {

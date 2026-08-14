@@ -27,6 +27,20 @@ export function translatePostgrestError(error: PostgrestError, fallback: string)
     case '23514':
       return AppError.badRequest(error.message.replace(/^.*?:\s*/, '') || fallback);
 
+    /**
+     * invalid_text_representation — a value the column's type will not accept,
+     * in practice an enum label Postgres does not know.
+     *
+     * This means the API and the database disagree about a type: a request
+     * passed the Zod schema and was then refused by the column. Filtering
+     * events by a category the enum was missing produced exactly this, and
+     * because it fell through to the default it reached the member as
+     * "internal error" — which reads as the server being broken rather than as
+     * a value it will not take.
+     */
+    case '22P02':
+      return AppError.badRequest('That value is not one this server recognises.');
+
     // insufficient_privilege — RLS refused, or validate_booking() raised 42501.
     case '42501':
       return error.message.toLowerCase().includes('certification')

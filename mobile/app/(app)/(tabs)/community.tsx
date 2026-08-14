@@ -17,22 +17,12 @@ import {
   TextField,
 } from '~/components/ui';
 import { useDebounced, useDirectory, useStartups } from '~/features/community/hooks/useCommunity';
-import { useMe } from '~/features/profile/hooks/useProfile';
+import { useMe, useShouldOfferTour } from '~/features/profile/hooks/useProfile';
+import { useIsStaff } from '~/features/staff/hooks/useStaff';
 import { usePreferencesStore } from '~/store/preferences.store';
 import { usePalette } from '~/providers/ThemeProvider';
+import { SUGGESTED_SKILLS } from '~/constants/skills';
 import { radius, space } from '~/theme/tokens';
-
-const SKILLS = [
-  'Rust',
-  'iOS',
-  'Hardware',
-  'AI/ML',
-  'Design',
-  'VC Pitching',
-  'Bio',
-  'Robotics',
-  'Systems',
-];
 
 /**
  * Community — who is on the floor, the full directory, and the startups.
@@ -56,13 +46,21 @@ export default function CommunityScreen() {
   const debouncedSearch = useDebounced(search, 300);
 
   const isMember = me?.isActiveMember ?? false;
+  const showTour = useShouldOfferTour();
 
   const directory = useDirectory({
     search: debouncedSearch || undefined,
     skills: skills.length ? skills : undefined,
     here: tab === 'here' || undefined,
   });
-  const startups = useStartups();
+  const [hiringOnly, setHiringOnly] = useState(false);
+  const startups = useStartups({
+    // The search box is shared with the directory; startups reuse the debounced
+    // value rather than keeping a second field the tab switch would desync.
+    search: debouncedSearch || undefined,
+    hiring: hiringOnly ? 'true' : undefined,
+  });
+  const isStaff = useIsStaff();
 
   const hasFilters = skills.length > 0 || search.length > 0;
   const showingPeople = tab !== 'startups';
@@ -81,7 +79,7 @@ export default function CommunityScreen() {
         <ScreenHeader eyebrow="Members only" title="Community" />
 
         <Segmented
-          accessibilityLabel="Community view"
+          aria-label="Community view"
           options={[
             { value: 'here', label: "Who's here" },
             { value: 'members', label: 'Members' },
@@ -101,9 +99,13 @@ export default function CommunityScreen() {
             </Text>
             <XStack gap={space[3]} marginTop={space[2]}>
               <Button onPress={() => router.push('/(app)/(tabs)/dojo')}>See plans</Button>
-              <Button variant="secondary" onPress={() => router.push('/(app)/tour')}>
-                Take a tour
-              </Button>
+              {/* Retired once they are a member or have a tour booked — same
+                  rule as the Home gate and the Dojo tab, from one hook. */}
+              {showTour ? (
+                <Button variant="secondary" onPress={() => router.push('/(app)/tour')}>
+                  Take a tour
+                </Button>
+              ) : null}
             </XStack>
           </Card>
         </YStack>
@@ -123,7 +125,7 @@ export default function CommunityScreen() {
       />
 
       <Segmented
-        accessibilityLabel="Community view"
+        aria-label="Community view"
         options={[
           { value: 'here', label: "Who's here" },
           { value: 'members', label: 'Members' },
@@ -152,7 +154,7 @@ export default function CommunityScreen() {
             style={{ marginHorizontal: -space[5] }}
             contentContainerStyle={{ paddingHorizontal: space[5], gap: space[2] }}
           >
-            {SKILLS.map((skill) => (
+            {SUGGESTED_SKILLS.map((skill) => (
               <Chip
                 key={skill}
                 label={skill}
@@ -176,8 +178,8 @@ export default function CommunityScreen() {
                   clearSkills();
                   setSearch('');
                 }}
-                accessibilityRole="button"
-                accessibilityLabel="Clear all filters"
+                role="button"
+                aria-label="Clear all filters"
                 hitSlop={8}
                 style={{ marginLeft: 'auto' }}
               >
@@ -204,41 +206,108 @@ export default function CommunityScreen() {
         }}
         data={startups.data ?? []}
         keyExtractor={(item) => item.id}
-        ListHeaderComponent={header}
+        ListHeaderComponent={
+          <YStack gap={space[3]}>
+            {header}
+
+            <TextField
+              label="Search"
+              value={search}
+              onChangeText={setSearch}
+              placeholder="Name, tagline, or stage"
+              autoCapitalize="none"
+              autoCorrect={false}
+              aria-label="Search startups"
+            />
+
+            <XStack alignItems="center" gap={space[2]} flexWrap="wrap">
+              <Chip
+                label="Hiring"
+                selected={hiringOnly}
+                onPress={() => setHiringOnly((on) => !on)}
+              />
+              <Text variant="caption" tone="subtle">
+                {startups.data
+                  ? `${startups.data.length} ${startups.data.length === 1 ? 'startup' : 'startups'}`
+                  : ''}
+              </Text>
+
+              {/*
+                Management is staff-only, and the entry point is too — a member
+                should not see a control they cannot use. The API refuses them
+                regardless; this keeps the UI honest about it.
+              */}
+              {isStaff ? (
+                <Pressable
+                  onPress={() => router.push('/(app)/staff/startups')}
+                  role="button"
+                  aria-label="Manage startups"
+                  hitSlop={8}
+                  style={{ marginLeft: 'auto' }}
+                >
+                  <Text variant="caption" tone="accent">
+                    Manage ›
+                  </Text>
+                </Pressable>
+              ) : null}
+            </XStack>
+          </YStack>
+        }
         ListHeaderComponentStyle={{ marginBottom: space[3] }}
         renderItem={({ item }) => (
-          <Card flexDirection="row" gap={space[4]} alignItems="flex-start">
-            <View
-              style={{
-                width: 42,
-                height: 42,
-                borderRadius: radius.md,
-                backgroundColor: palette.accentTintStrong,
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-              accessibilityElementsHidden
-            >
-              <Text variant="mono" fontWeight="700" tone="accent">
-                {item.mark}
-              </Text>
-            </View>
+          <Pressable
+            onPress={() => router.push(`/(app)/startup/${item.slug}`)}
+            role="button"
+            aria-label={`${item.name}. ${item.tagline} ${item.stage}, founded ${item.foundedYear}.${item.hiring ? ' Hiring.' : ''}`}
+          >
+            <Card flexDirection="row" gap={space[4]} alignItems="flex-start">
+              <View
+                style={{
+                  width: 42,
+                  height: 42,
+                  borderRadius: radius.md,
+                  backgroundColor: palette.accentTintStrong,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+                aria-hidden
+              >
+                <Text variant="mono" fontWeight="700" tone="accent">
+                  {item.mark}
+                </Text>
+              </View>
 
-            <YStack flex={1} gap={space[1]}>
-              <XStack alignItems="center" gap={space[2]}>
-                <Text variant="subtitle">{item.name}</Text>
-                {item.hiring ? <Chip label="Hiring" readOnly /> : null}
-              </XStack>
-              <Text variant="small" tone="muted">
-                {item.tagline}
-              </Text>
-              <Text variant="caption" tone="subtle">
-                {item.stage} · Founded at the Dojo {item.foundedYear}
-              </Text>
-            </YStack>
-          </Card>
+              <YStack flex={1} gap={space[1]}>
+                <XStack alignItems="center" gap={space[2]}>
+                  <Text variant="subtitle">{item.name}</Text>
+                  {item.hiring ? <Chip label="Hiring" readOnly /> : null}
+                </XStack>
+                <Text variant="small" tone="muted">
+                  {item.tagline}
+                </Text>
+                <Text variant="caption" tone="subtle">
+                  {item.stage} · Founded at the Dojo {item.foundedYear}
+                </Text>
+              </YStack>
+            </Card>
+          </Pressable>
         )}
-        ListEmptyComponent={startups.isPending ? <ListSkeleton count={4} height={110} /> : null}
+        ListEmptyComponent={
+          startups.isPending ? (
+            <ListSkeleton count={4} height={110} />
+          ) : startups.isError ? (
+            <ErrorState error={startups.error} onRetry={() => void startups.refetch()} />
+          ) : (
+            <EmptyState
+              title="No startups match"
+              description={
+                search || hiringOnly
+                  ? 'Try a different search, or clear the Hiring filter.'
+                  : 'Nothing is listed yet.'
+              }
+            />
+          )
+        }
         refreshControl={
           <RefreshControl
             refreshing={startups.isRefetching}
@@ -279,8 +348,8 @@ export default function CommunityScreen() {
       renderItem={({ item }) => (
         <Pressable
           onPress={() => router.push(`/(app)/member/${item.id}`)}
-          accessibilityRole="button"
-          accessibilityLabel={`${item.name}. ${item.isHere ? `On the floor in ${item.zoneName ?? 'the space'}.` : 'Away.'} ${item.skillLine}`}
+          role="button"
+          aria-label={`${item.name}. ${item.isHere ? `On the floor in ${item.zoneName ?? 'the space'}.` : 'Away.'} ${item.skillLine}`}
           accessibilityHint="Opens their profile"
         >
           <Card interactive flexDirection="row" gap={space[4]} alignItems="flex-start">

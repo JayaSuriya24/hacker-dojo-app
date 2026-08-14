@@ -1,11 +1,25 @@
+import { dojo } from '~/constants/config';
+
 /**
  * Formatting helpers.
  *
- * Every one of these goes through `Intl`, which respects the device locale and
- * time zone. Hand-rolled formatting ("$" + cents/100) breaks for members whose
- * device is set to another region, and hard-coded time strings are wrong the
- * moment someone travels.
+ * Every one of these goes through `Intl`, so the LOCALE always follows the
+ * device — a member who reads dates as 13/08 keeps reading them that way.
+ *
+ * The TIME ZONE does not. Everything with a wall clock on it here describes
+ * something happening in one building: an event starts at 6pm in Mountain View
+ * whether you are looking from Chicago or from a plane. Formatting those in the
+ * device's zone is how a card for a noon event read "2:00 PM" on a laptop set
+ * to Central, which is not a display preference — it is the wrong time for the
+ * thing being described. `dojo.timezone` is the same value the server's
+ * `DOJO_TIMEZONE` and Postgres' `dojo_timezone()` hold.
+ *
+ * `formatCurrency` and `formatRelative` are deliberately untouched: money has
+ * no zone, and "in 3 hours" is the same duration everywhere.
  */
+
+/** Every wall-clock formatter below pins this. */
+const TZ = dojo.timezone;
 
 /** Cents to a currency string. Money is integer cents everywhere — never a float. */
 export function formatCurrency(cents: number, currency = 'USD'): string {
@@ -19,14 +33,21 @@ export function formatCurrency(cents: number, currency = 'USD'): string {
 }
 
 export function formatTime(iso: string): string {
-  return new Date(iso).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  return new Date(iso).toLocaleTimeString(undefined, {
+    hour: 'numeric',
+    minute: '2-digit',
+    timeZone: TZ,
+  });
 }
 
 export function formatDayMonth(iso: string): { month: string; day: string } {
   const date = new Date(iso);
   return {
-    month: date.toLocaleDateString(undefined, { month: 'short' }).toUpperCase(),
-    day: String(date.getDate()).padStart(2, '0'),
+    month: date.toLocaleDateString(undefined, { month: 'short', timeZone: TZ }).toUpperCase(),
+    // `getDate()` reads the DEVICE's calendar day, which disagrees with the
+    // month beside it for any evening event west of UTC. Taken from the same
+    // zoned format instead so the two cannot drift apart.
+    day: date.toLocaleDateString(undefined, { day: '2-digit', timeZone: TZ }),
   };
 }
 
@@ -35,6 +56,7 @@ export function formatFullDate(iso: string): string {
     weekday: 'long',
     month: 'long',
     day: 'numeric',
+    timeZone: TZ,
   });
 }
 
@@ -44,6 +66,7 @@ export function formatDateRange(startIso: string, endIso: string): string {
     weekday: 'short',
     month: 'short',
     day: 'numeric',
+    timeZone: TZ,
   });
   return `${day} · ${formatTime(startIso)} – ${formatTime(endIso)}`;
 }

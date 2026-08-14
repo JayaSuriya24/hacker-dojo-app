@@ -6,6 +6,7 @@ import { XStack, YStack } from 'tamagui';
 import { Button, Text } from '~/components/ui';
 import { usePalette, useResolvedScheme } from '~/providers/ThemeProvider';
 import { authService } from '../services/auth.service';
+import { authProviders } from '../providers';
 import { userMessage } from '~/services/api/errors';
 import { space } from '~/theme/tokens';
 
@@ -63,7 +64,7 @@ export function SocialSignIn({ onError }: { onError: (message: string) => void }
 
   return (
     <YStack gap={space[4]}>
-      <XStack alignItems="center" gap={space[4]} accessibilityElementsHidden>
+      <XStack alignItems="center" gap={space[4]} aria-hidden>
         <View style={{ flex: 1, height: 1, backgroundColor: palette.border }} />
         <Text variant="eyebrow" tone="subtle">
           or continue with
@@ -71,7 +72,7 @@ export function SocialSignIn({ onError }: { onError: (message: string) => void }
         <View style={{ flex: 1, height: 1, backgroundColor: palette.border }} />
       </XStack>
 
-      {Platform.OS === 'ios' ? (
+      {authProviders.apple && Platform.OS === 'ios' ? (
         <AppleAuthentication.AppleAuthenticationButton
           buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
           // Apple requires the button to contrast with its background; follow
@@ -93,7 +94,7 @@ export function SocialSignIn({ onError }: { onError: (message: string) => void }
         icon={<GoogleMark />}
         loading={busy === 'google'}
         onPress={() => void run('google')}
-        accessibilityLabel="Continue with Google"
+        aria-label="Continue with Google"
       >
         Continue with Google
       </Button>

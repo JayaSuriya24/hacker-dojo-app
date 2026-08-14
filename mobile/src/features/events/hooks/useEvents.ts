@@ -110,17 +110,39 @@ export function useCancelRsvp() {
         queryKey: queryKeys.events.lists(),
       });
 
+      /**
+       * Leaving decrements whichever list the member was actually on.
+       * Treating every cancellation as a `going` cancellation left the
+       * waitlist count untouched when someone gave up a waitlisted place, so
+       * the card kept counting them until the next refetch.
+       */
+      const patch = (event: DojoEvent): DojoEvent => {
+        if (event.id !== eventId || !event.rsvpStatus) return event;
+
+        const going = event.rsvpStatus === 'going';
+        return {
+          ...event,
+          rsvpStatus: null,
+          checkinCode: null,
+          goingCount: going ? Math.max(0, event.goingCount - 1) : event.goingCount,
+          waitlistCount: going ? event.waitlistCount : Math.max(0, event.waitlistCount - 1),
+          fillPercent: going
+            ? Math.min(
+                100,
+                Math.round((Math.max(0, event.goingCount - 1) / Math.max(1, event.capacity)) * 100),
+              )
+            : event.fillPercent,
+        };
+      };
+
       queryClient.setQueriesData<DojoEvent[]>({ queryKey: queryKeys.events.lists() }, (events) =>
-        events?.map((event) =>
-          event.id === eventId && event.rsvpStatus === 'going'
-            ? {
-                ...event,
-                rsvpStatus: null,
-                checkinCode: null,
-                goingCount: Math.max(0, event.goingCount - 1),
-              }
-            : event,
-        ),
+        events?.map(patch),
+      );
+      // The detail sheet is where most cancellations happen, and it was the one
+      // cache the optimistic update skipped — so the sheet you tapped in was
+      // the last thing to catch up. `useRsvp` patches both; this now matches.
+      queryClient.setQueryData<DojoEvent>(queryKeys.events.detail(eventId), (event) =>
+        event ? patch(event) : event,
       );
 
       return { snapshot };

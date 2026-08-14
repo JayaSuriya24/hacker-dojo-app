@@ -24,6 +24,23 @@ import { brand } from '~/theme/tokens';
  *   notification settings row instead.
  */
 
+/**
+ * expo-notifications ships web builds for only three of its modules — badge,
+ * device push token, and server registration. Scheduling, cancelling and
+ * Expo push tokens all resolve to the expo-modules-core proxy on web, which
+ * throws "The method or property X is not available on web" on the first call.
+ *
+ * `setNotificationHandler` and the response listener are safe: they are plain
+ * JS and are already exercised on every web load by the root layout.
+ *
+ * Local reminders are a native affordance and the web target exists to lay out
+ * screens, so each entry point below degrades to a documented no-op. Throwing
+ * would be worse: the caller is a booking confirmation that has already
+ * succeeded server-side, and there is nothing useful for it to do with the
+ * failure.
+ */
+const supportsScheduledNotifications = Platform.OS !== 'web';
+
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowBanner: true,
@@ -109,17 +126,43 @@ export function useNotificationSetup(): void {
  * which is both the platform guidance and the difference between a ~70% and a
  * ~30% opt-in rate.
  */
+/**
+ * Why push registration ended the way it did.
+ *
+ * This was a bare boolean, and false meant three unrelated things: this device
+ * cannot do push at all, the member has blocked it in system settings, or they
+ * just declined the prompt. Settings showed one "open your device settings"
+ * dialog for all three — advice that is wrong on web, where there is no such
+ * pane, and wrong on a simulator, which has no push service to permit.
+ */
+export type PushRegistration =
+  /** A token is stored; this device can receive push. */
+  | 'granted'
+  /** Web or simulator — no push service exists to register with. */
+  | 'unsupported'
+  /** Permanently denied. The OS will not prompt again; system settings is the only way back. */
+  | 'blocked'
+  /** Declined this time, or the token fetch failed. Asking again later is fine. */
+  | 'denied';
+
 export function useRegisterPushToken() {
   const { isAuthenticated } = useAuth();
   const { mutateAsync: updatePreferences } = useUpdateNotificationPreferences();
 
-  return useCallback(async (): Promise<boolean> => {
-    if (!isAuthenticated) return false;
+  return useCallback(async (): Promise<PushRegistration> => {
+    if (!isAuthenticated) return 'denied';
+
+    // Expo push tokens need a native push service. `Device.isDevice` is true in
+    // a browser, so it does not stand in for this check.
+    if (!supportsScheduledNotifications) {
+      logger.info('Skipping push registration on web');
+      return 'unsupported';
+    }
 
     // A simulator has no push service to register with.
     if (!Device.isDevice) {
       logger.info('Skipping push registration on a simulator');
-      return false;
+      return 'unsupported';
     }
 
     const existing = await Notifications.getPermissionsAsync();
@@ -128,12 +171,12 @@ export function useRegisterPushToken() {
     if (status !== 'granted') {
       // `canAskAgain: false` means the member denied permanently; the OS will
       // not show a prompt, so the UI should send them to system settings.
-      if (!existing.canAskAgain) return false;
+      if (!existing.canAskAgain) return 'blocked';
       const requested = await Notifications.requestPermissionsAsync();
       status = requested.status;
     }
 
-    if (status !== 'granted') return false;
+    if (status !== 'granted') return 'denied';
 
     try {
       const projectId = Constants.expoConfig?.extra?.['eas']?.projectId as string | undefined;
@@ -142,10 +185,10 @@ export function useRegisterPushToken() {
       );
 
       await updatePreferences({ pushToken: token.data });
-      return true;
+      return 'granted';
     } catch (error) {
       logger.exception(error, { scope: 'push.register' });
-      return false;
+      return 'denied';
     }
   }, [isAuthenticated, updatePreferences]);
 }
@@ -157,6 +200,8 @@ export async function scheduleBookingReminder(input: {
   startsAt: Date;
   minutesBefore?: number;
 }): Promise<string | null> {
+  if (!supportsScheduledNotifications) return null;
+
   const fireAt = new Date(input.startsAt.getTime() - (input.minutesBefore ?? 15) * 60_000);
   if (fireAt.getTime() <= Date.now()) return null;
 
@@ -180,5 +225,6 @@ export async function scheduleBookingReminder(input: {
 }
 
 export async function cancelScheduled(identifier: string): Promise<void> {
+  if (!supportsScheduledNotifications) return;
   await Notifications.cancelScheduledNotificationAsync(identifier);
 }

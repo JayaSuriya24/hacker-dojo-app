@@ -1,4 +1,6 @@
 import { eventRepository, type EventQuery } from '../repositories/event.repository.js';
+import { describeRecurrence } from '../utils/recurrence.js';
+import { logger } from '../config/logger.js';
 import { AppError } from '../utils/errors.js';
 import type { AuthenticatedUser } from '../types/http.js';
 import type { EventCategory, EventFeedRow, RsvpStatus } from '../types/database.js';
@@ -24,11 +26,28 @@ export interface EventView {
   checkinCode: string | null;
   /** Percentage full, pre-computed so the progress bar is not client arithmetic. */
   fillPercent: number;
+  /** Present only on a recurring event's detail. Null on the feed and on one-offs. */
+  series: EventSeriesView | null;
 }
+
+/**
+ * A recurring event's schedule, as the detail sheet needs it: one sentence
+ * describing the rule, and the next few dates to offer as chips.
+ */
+export interface EventSeriesView {
+  id: string;
+  /** e.g. "Every week on Tuesday until August 25, 2026". */
+  summary: string;
+  upcoming: Array<{ eventId: string; startsAt: string; endsAt: string }>;
+}
+
+/** How many sibling dates the chips offer. One screenful, not a calendar. */
+const SERIES_CHIP_COUNT = 5;
 
 function toView(
   row: EventFeedRow,
   rsvp: { status: RsvpStatus; checkin_code: string } | undefined,
+  series: EventSeriesView | null = null,
 ): EventView {
   return {
     id: row.id,
@@ -49,7 +68,47 @@ function toView(
     rsvpStatus: rsvp?.status ?? null,
     checkinCode: rsvp?.checkin_code ?? null,
     fillPercent: Math.min(100, Math.round((row.going_count / Math.max(1, row.capacity)) * 100)),
+    series,
   };
+}
+
+/**
+ * The schedule behind one event, or null when it does not repeat.
+ *
+ * Loaded only for the detail view. Doing it on the feed would be one extra
+ * round trip per recurring event for a sentence the list never shows, and the
+ * list is the hot path.
+ *
+ * Swallowed on failure: a meetup whose recurrence could not be described is
+ * still a meetup someone can RSVP to, and the sheet renders without the
+ * schedule block rather than not at all.
+ */
+async function loadSeries(
+  accessToken: string | null,
+  row: EventFeedRow,
+): Promise<EventSeriesView | null> {
+  if (!row.series_id) return null;
+
+  try {
+    const [series, upcoming] = await Promise.all([
+      eventRepository.findSeries(accessToken, row.series_id),
+      eventRepository.upcomingInSeries(accessToken, row.series_id, SERIES_CHIP_COUNT),
+    ]);
+    if (!series) return null;
+
+    return {
+      id: series.id,
+      summary: describeRecurrence(series),
+      upcoming: upcoming.map((entry) => ({
+        eventId: entry.id,
+        startsAt: entry.starts_at,
+        endsAt: entry.ends_at,
+      })),
+    };
+  } catch (error) {
+    logger.warn({ err: error, seriesId: row.series_id }, 'Could not describe the event series');
+    return null;
+  }
 }
 
 export const eventService = {
@@ -71,13 +130,16 @@ export const eventService = {
   },
 
   async detail(user: AuthenticatedUser | undefined, eventId: string): Promise<EventView> {
-    const event = await eventRepository.findById(user?.accessToken ?? null, eventId);
+    const token = user?.accessToken ?? null;
+    const event = await eventRepository.findById(token, eventId);
     if (!event) throw AppError.notFound('That event is no longer listed.');
 
-    if (!user) return toView(event, undefined);
+    const series = await loadSeries(token, event);
+
+    if (!user) return toView(event, undefined, series);
 
     const rsvp = await eventRepository.findRsvp(user.accessToken, eventId, user.id);
-    return toView(event, rsvp && rsvp.status !== 'cancelled' ? rsvp : undefined);
+    return toView(event, rsvp && rsvp.status !== 'cancelled' ? rsvp : undefined, series);
   },
 
   /**

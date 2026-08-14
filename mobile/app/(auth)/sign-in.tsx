@@ -6,6 +6,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { XStack, YStack } from 'tamagui';
 import Svg, { Path, Rect } from 'react-native-svg';
 import { AuthShell } from '~/features/auth/components/AuthShell';
+import { AuthModeSwitch } from '~/features/auth/components/AuthModeSwitch';
 import { SocialSignIn } from '~/features/auth/components/SocialSignIn';
 import { authService } from '~/features/auth/services/auth.service';
 import { signInSchema, type SignInValues } from '~/features/auth/validation/auth.schemas';
@@ -59,7 +60,13 @@ export default function SignInScreen() {
     formState: { errors, isSubmitting, isValid },
   } = useForm<SignInValues>({
     resolver: zodResolver(signInSchema),
-    mode: 'onBlur',
+    // `onTouched`, not `onBlur`. Under `onBlur`, `isValid` is recomputed only
+    // when a field is left — and the last field anyone fills is the password,
+    // which they leave by pressing Sign in. That press lands on a button still
+    // disabled from the validation run when the password was empty, so nothing
+    // happens and the form looks stuck. `onTouched` re-validates on change once
+    // a field has been touched, so the button enables as the password is typed.
+    mode: 'onTouched',
     defaultValues: { email: '', password: '', remember: true },
   });
 
@@ -79,10 +86,12 @@ export default function SignInScreen() {
   return (
     <AuthShell heading="Sign in to your account">
       <YStack gap={space[5]}>
+        <AuthModeSwitch mode="signIn" />
+
         {formError ? (
           <View
-            accessibilityLiveRegion="assertive"
-            accessibilityRole="alert"
+            aria-live="assertive"
+            role="alert"
             style={{
               backgroundColor: palette.errorTint,
               borderWidth: 1,
@@ -156,9 +165,9 @@ export default function SignInScreen() {
             render={({ field: { onChange, value } }) => (
               <Pressable
                 onPress={() => onChange(!value)}
-                accessibilityRole="checkbox"
-                accessibilityLabel="Keep me signed in"
-                accessibilityState={{ checked: Boolean(value) }}
+                role="checkbox"
+                aria-label="Keep me signed in"
+                aria-checked={Boolean(value)}
                 style={{ minHeight: 44, justifyContent: 'center' }}
               >
                 <XStack alignItems="center" gap={space[3]}>
@@ -190,7 +199,7 @@ export default function SignInScreen() {
 
           <Link href="/(auth)/forgot-password" asChild>
             <Pressable
-              accessibilityRole="link"
+              role="link"
               style={{ marginLeft: 'auto', minHeight: 44, justifyContent: 'center' }}
             >
               <Text variant="small" tone="subtle">

@@ -27,6 +27,7 @@ import { usePreferencesStore } from '~/store/preferences.store';
 import { usePalette } from '~/providers/ThemeProvider';
 import { space } from '~/theme/tokens';
 import type { StaffQueueItem, StaffQueueKind } from '~/types/domain';
+import { goBackOr } from '~/utils/navigation';
 
 /**
  * The steward's dashboard.
@@ -93,12 +94,7 @@ function StatCard({
   if (!onPress) return content;
 
   return (
-    <Pressable
-      onPress={onPress}
-      style={{ flex: 1 }}
-      accessibilityRole="button"
-      accessibilityLabel={`${value} ${label}`}
-    >
+    <Pressable onPress={onPress} style={{ flex: 1 }} role="button" aria-label={`${value} ${label}`}>
       {content}
     </Pressable>
   );
@@ -167,7 +163,7 @@ export default function StaffDashboardScreen() {
             title="Stewards only"
             description="This area is for Dojo staff."
             actionLabel="Back"
-            onAction={() => router.back()}
+            onAction={() => goBackOr()}
           />
         </Screen>
       </>
@@ -221,7 +217,7 @@ export default function StaffDashboardScreen() {
 
         <Section title="Queue">
           <Segmented
-            accessibilityLabel="Filter the queue"
+            aria-label="Filter the queue"
             options={FILTERS}
             value={filter}
             onChange={setFilter}
@@ -271,7 +267,7 @@ export default function StaffDashboardScreen() {
                       <Button
                         size="sm"
                         onPress={() => router.push('/(app)/staff/documents')}
-                        accessibilityLabel={`Review ${item.summary}`}
+                        aria-label={`Review ${item.summary}`}
                       >
                         Review file
                       </Button>
@@ -286,7 +282,7 @@ export default function StaffDashboardScreen() {
                             fullWidth
                             disabled={pending}
                             onPress={() => decide(item, action.status)}
-                            accessibilityLabel={`${action.label} ${item.summary} for ${item.requesterName}`}
+                            aria-label={`${action.label} ${item.summary} for ${item.requesterName}`}
                           >
                             {action.label}
                           </Button>
