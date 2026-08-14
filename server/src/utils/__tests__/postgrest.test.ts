@@ -22,6 +22,21 @@ describe('translatePostgrestError', () => {
     expect(error.message).toMatch(/another time/i);
   });
 
+  /**
+   * A type the API accepts and the column does not is a disagreement about the
+   * schema, not a server fault. It surfaced when the event-category enum lagged
+   * behind the validator and every filtered request answered 500.
+   */
+  it('reports an unknown enum label as a bad request, not an internal error', () => {
+    const error = translatePostgrestError(
+      pgError('22P02', 'invalid input value for enum event_category: "Workshops"'),
+      'Could not load events.',
+    );
+
+    expect(error.status).toBe(400);
+    expect(error.status).not.toBe(500);
+  });
+
   it('distinguishes a certification refusal from a generic RLS refusal', () => {
     const cert = translatePostgrestError(
       pgError('42501', 'Certification required for this resource'),

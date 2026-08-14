@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { Pressable, View } from 'react-native';
-import { router } from 'expo-router';
 import { XStack, YStack } from 'tamagui';
 import { SheetScreen } from '~/components/SheetScreen';
 import { Button, Text, TextField } from '~/components/ui';
@@ -10,6 +9,7 @@ import { userMessage } from '~/services/api/errors';
 import { dojo } from '~/constants/config';
 import { formatCurrency } from '~/utils/format';
 import { radius, space } from '~/theme/tokens';
+import { goBackOr } from '~/utils/navigation';
 
 const PRESETS = [2500, 5000, 10000];
 
@@ -51,7 +51,7 @@ export default function DonateSheet() {
             {dojo.ein}.
           </Text>
           <YStack alignSelf="stretch" marginTop={space[4]}>
-            <Button variant="primary" fullWidth onPress={() => router.back()}>
+            <Button variant="primary" fullWidth onPress={() => goBackOr()}>
               Done
             </Button>
           </YStack>

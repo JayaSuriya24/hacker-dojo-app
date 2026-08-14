@@ -170,6 +170,24 @@ export function formatDojoRange(startsAt: string, endsAt: string): string {
   return `${day} · ${time.format(start)} – ${time.format(end)}`;
 }
 
+/**
+ * Just the clock window: `11:00 AM – 12:00 PM`.
+ *
+ * `formatDojoRange` leads with the weekday and date, which is right for a
+ * reservation that could be any day. Where the day is already established by
+ * context — a list headed "today" — repeating it on every row is noise that
+ * pushes the times that matter to the right.
+ */
+export function formatDojoClockRange(startsAt: string, endsAt: string): string {
+  const time = new Intl.DateTimeFormat('en-US', {
+    timeZone: DOJO_TIMEZONE,
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+
+  return `${time.format(new Date(startsAt))} – ${time.format(new Date(endsAt))}`;
+}
+
 /** `YYYY-MM-DD` for the day it currently is in the space. */
 export function dojoToday(now: Date = new Date()): string {
   const wall = toDojoWallClock(now);

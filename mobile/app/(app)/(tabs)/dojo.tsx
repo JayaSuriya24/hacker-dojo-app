@@ -10,18 +10,18 @@ import {
   Screen,
   ScreenHeader,
   Section,
-  Segmented,
   Text,
 } from '~/components/ui';
 import { PricingTable } from '~/features/dojo/components/PricingTable';
 import { FaqList } from '~/features/dojo/components/FaqList';
-import { useMe, usePlans } from '~/features/profile/hooks/useProfile';
+import { useMe, usePlans, useShouldOfferTour } from '~/features/profile/hooks/useProfile';
 import { useBillingPortal } from '~/features/payments/hooks/usePayments';
 import { useAbout, usePrograms } from '~/features/community/hooks/useCommunity';
 import { usePreferencesStore } from '~/store/preferences.store';
 import { resolvePeriod, toChoice } from '~/features/payments/billingPeriod';
 import { usePalette } from '~/providers/ThemeProvider';
 import { dojo } from '~/constants/config';
+import { userMessage } from '~/services/api/errors';
 import { space } from '~/theme/tokens';
 import type { Plan } from '~/types/domain';
 
@@ -40,7 +40,6 @@ export default function DojoScreen() {
   const about = useAbout();
 
   const storedPeriod = usePreferencesStore((state) => state.billingPeriod);
-  const setPeriod = usePreferencesStore((state) => state.setBillingPeriod);
 
   /**
    * A member already on an annual plan should see the control on Annual, not on
@@ -53,6 +52,7 @@ export default function DojoScreen() {
   const billingPortal = useBillingPortal();
 
   const isMember = me?.isActiveMember ?? false;
+  const showTour = useShouldOfferTour();
   const testimonials = about.data?.testimonials ?? [];
   const testimonial = testimonials[testimonialIndex];
 
@@ -129,22 +129,14 @@ export default function DojoScreen() {
       </Section>
 
       {/* ---- Membership -------------------------------------------------- */}
-      <Section
-        title="Membership"
-        action={
-          <View style={{ width: 168 }}>
-            <Segmented
-              aria-label="Billing period"
-              options={[
-                { value: 'mo', label: 'Monthly' },
-                { value: 'yr', label: 'Annual' },
-              ]}
-              value={period}
-              onChange={setPeriod}
-            />
-          </View>
-        }
-      >
+      {/*
+        No billing-period control: every plan is monthly-only, so the toggle
+        offered a choice that resolved back to Monthly whichever side was
+        pressed. The `period` plumbing below stays — `resolvePeriod` already
+        answers 'month' for a plan with no annual price, so restoring the
+        control is putting this Segmented back and nothing else.
+      */}
+      <Section title="Membership">
         {isMember && me?.membership ? (
           <Card borderColor="$accentBorder">
             <XStack alignItems="baseline" gap={space[3]}>
@@ -162,7 +154,7 @@ export default function DojoScreen() {
                   ? `Renews ${new Date(me.membership.currentPeriodEnd).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}`
                   : 'Active'}
             </Text>
-            <YStack marginTop={space[4]}>
+            <YStack marginTop={space[4]} gap={space[2]}>
               <Button
                 variant="secondary"
                 fullWidth
@@ -172,6 +164,19 @@ export default function DojoScreen() {
               >
                 Manage billing
               </Button>
+
+              {/*
+                The failure was silent: the mutation had no error branch, so a
+                member tapped Manage billing, watched the spinner stop, and was
+                told nothing at all. Stripe being unreachable is exactly when
+                someone needs a sentence rather than a button that appears to
+                do nothing.
+              */}
+              {billingPortal.isError ? (
+                <Text variant="small" tone="error" aria-live="polite">
+                  {userMessage(billingPortal.error)}
+                </Text>
+              ) : null}
             </YStack>
           </Card>
         ) : null}
@@ -190,47 +195,50 @@ export default function DojoScreen() {
       </Section>
 
       {/* ---- Tour and giving --------------------------------------------- */}
+      {/*
+        The tour is an invitation, and an invitation only makes sense to someone
+        who has not already accepted it. A member has the door in their pocket,
+        and someone with a tour already booked reads a second invitation as the
+        booking having failed to register — so both retire the button.
+
+        `hasBookedTour` comes from the API rather than a local flag: the tour may
+        have been booked on another device, or on the marketing site before this
+        account existed, and a flag on this phone would not know about either.
+
+        Giving carries no such condition. A donation is welcome from anyone, at
+        any point, however many times — so it is the one that stays and widens
+        to fill the row on its own.
+      */}
       <Section>
         <XStack gap={space[3]}>
-          <YStack flex={1}>
-            <Button variant="primary" fullWidth onPress={() => router.push('/(app)/tour')}>
-              Take a tour
-            </Button>
-          </YStack>
-          <YStack flex={1}>
+          {showTour ? (
+            <YStack flex={1}>
+              <Button variant="primary" fullWidth onPress={() => router.push('/(app)/tour')}>
+                Take a tour
+              </Button>
+            </YStack>
+          ) : null}
+
+          <YStack flex={1} gap={space[2]}>
             <Button variant="secondary" fullWidth onPress={() => router.push('/(app)/donate')}>
               Support the Dojo
             </Button>
+            <Text variant="caption" tone="subtle">
+              Tax-deductible. Keeps the doors open, the labs stocked and community events free.
+            </Text>
           </YStack>
         </XStack>
       </Section>
 
-      {/* ---- Impact ------------------------------------------------------ */}
-      {about.data ? (
-        <Section title="Impact report">
-          <Card>
-            <XStack flexWrap="wrap" gap={space[5]}>
-              {about.data.impact.map((stat) => (
-                <YStack key={stat.label} width="45%" gap={space[1]}>
-                  <Text variant="monoLarge" tone="accent">
-                    {stat.value}
-                  </Text>
-                  <Text variant="caption" tone="subtle">
-                    {stat.label}
-                  </Text>
-                </YStack>
-              ))}
-            </XStack>
-          </Card>
-        </Section>
-      ) : null}
-
       {/* ---- Pillars ----------------------------------------------------- */}
-      {about.data ? (
+      {/* Same guard, same reason. The six that used to fill this section were
+          written by nobody at the Dojo; the slot stays so staff can put the
+          real ones in, and stays invisible until they do. */}
+      {about.data?.pillars.length ? (
         <Section title="What we stand for">
           <XStack flexWrap="wrap" gap={space[2]}>
             {about.data.pillars.map((pillar) => (
-              <Card key={pillar.name} tone="alt" width="31.5%" padded="tight" alignItems="center">
+              <Card key={pillar.key} tone="alt" width="31.5%" padded="tight" alignItems="center">
                 <Text variant="small">{pillar.name}</Text>
                 <Text variant="caption" tone="subtle" center>
                   {pillar.line}

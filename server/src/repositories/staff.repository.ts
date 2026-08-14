@@ -224,4 +224,40 @@ export const occupancyRepository = {
       'Could not load live occupancy.',
     );
   },
+
+  /**
+   * Close every session that ran past its expiry without a checkout.
+   *
+   * The floor empties by people leaving, not by people pressing a button, so
+   * most sessions end by timing out. Nothing wrote `ended_at` in that case,
+   * which left rows that no read counted as live but that the partial unique
+   * index still treated as live — see `sessionRepository.endExpiredFor`, which
+   * digs out the caller's own row on demand. This is the same repair applied to
+   * everyone on a timer, so a member is not relying on the check-in path to
+   * clean up after them and the table matches what the dial says.
+   *
+   * Each row is stamped with its own expiry rather than with now: they are
+   * closed as a batch, but they did not all end at the same moment.
+   */
+  async endExpiredSessions(): Promise<number> {
+    const stale = unwrapList(
+      await adminClient
+        .from('sessions')
+        .select('id, expires_at')
+        .is('ended_at', null)
+        .lt('expires_at', new Date().toISOString())
+        .returns<Array<{ id: string; expires_at: string }>>(),
+      'Could not list expired sessions.',
+    );
+
+    for (const row of stale) {
+      const { error } = await adminClient
+        .from('sessions')
+        .update({ ended_at: row.expires_at })
+        .eq('id', row.id);
+      if (error) throw new Error(error.message);
+    }
+
+    return stale.length;
+  },
 };

@@ -126,24 +126,43 @@ export function useNotificationSetup(): void {
  * which is both the platform guidance and the difference between a ~70% and a
  * ~30% opt-in rate.
  */
+/**
+ * Why push registration ended the way it did.
+ *
+ * This was a bare boolean, and false meant three unrelated things: this device
+ * cannot do push at all, the member has blocked it in system settings, or they
+ * just declined the prompt. Settings showed one "open your device settings"
+ * dialog for all three — advice that is wrong on web, where there is no such
+ * pane, and wrong on a simulator, which has no push service to permit.
+ */
+export type PushRegistration =
+  /** A token is stored; this device can receive push. */
+  | 'granted'
+  /** Web or simulator — no push service exists to register with. */
+  | 'unsupported'
+  /** Permanently denied. The OS will not prompt again; system settings is the only way back. */
+  | 'blocked'
+  /** Declined this time, or the token fetch failed. Asking again later is fine. */
+  | 'denied';
+
 export function useRegisterPushToken() {
   const { isAuthenticated } = useAuth();
   const { mutateAsync: updatePreferences } = useUpdateNotificationPreferences();
 
-  return useCallback(async (): Promise<boolean> => {
-    if (!isAuthenticated) return false;
+  return useCallback(async (): Promise<PushRegistration> => {
+    if (!isAuthenticated) return 'denied';
 
     // Expo push tokens need a native push service. `Device.isDevice` is true in
     // a browser, so it does not stand in for this check.
     if (!supportsScheduledNotifications) {
       logger.info('Skipping push registration on web');
-      return false;
+      return 'unsupported';
     }
 
     // A simulator has no push service to register with.
     if (!Device.isDevice) {
       logger.info('Skipping push registration on a simulator');
-      return false;
+      return 'unsupported';
     }
 
     const existing = await Notifications.getPermissionsAsync();
@@ -152,12 +171,12 @@ export function useRegisterPushToken() {
     if (status !== 'granted') {
       // `canAskAgain: false` means the member denied permanently; the OS will
       // not show a prompt, so the UI should send them to system settings.
-      if (!existing.canAskAgain) return false;
+      if (!existing.canAskAgain) return 'blocked';
       const requested = await Notifications.requestPermissionsAsync();
       status = requested.status;
     }
 
-    if (status !== 'granted') return false;
+    if (status !== 'granted') return 'denied';
 
     try {
       const projectId = Constants.expoConfig?.extra?.['eas']?.projectId as string | undefined;
@@ -166,10 +185,10 @@ export function useRegisterPushToken() {
       );
 
       await updatePreferences({ pushToken: token.data });
-      return true;
+      return 'granted';
     } catch (error) {
       logger.exception(error, { scope: 'push.register' });
-      return false;
+      return 'denied';
     }
   }, [isAuthenticated, updatePreferences]);
 }

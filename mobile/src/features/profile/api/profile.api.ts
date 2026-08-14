@@ -17,6 +17,8 @@ export const profileApi = {
     skills?: string[];
     directory_visible?: boolean;
     avatar_path?: string;
+    /** One-way: records that the skills prompt has run. Never sent as false. */
+    skills_prompted?: true;
   }) => api.patch<Me>('/me', patch),
 
   notifications: () => api.get<NotificationPreferences>('/me/notifications'),

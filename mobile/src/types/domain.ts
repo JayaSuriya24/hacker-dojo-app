@@ -11,7 +11,30 @@ export type BillingPeriod = 'month' | 'year';
 export type ResourceKind = 'hardware' | 'room';
 export type ResourceStatus = 'available' | 'in_use' | 'maintenance';
 export type RsvpStatus = 'going' | 'waitlisted' | 'cancelled';
-export type EventCategory = 'Hackathons' | 'Hardware' | 'AI/ML' | 'Community';
+/**
+ * The `event_category` enum, in its database order.
+ *
+ * Exported as a value, not just a type, because three places need to enumerate
+ * it — the host-event chips, its own Zod schema, and the Events filter — and
+ * each of them used to keep its own hand-written copy. Adding a category then
+ * meant editing four lists and noticing all four.
+ */
+export const EVENT_CATEGORIES = [
+  'Hackathons',
+  'Hardware',
+  'AI/ML',
+  'Community',
+  'Workshops',
+  'Talks',
+  'Meetups',
+  'Social',
+  'Startups',
+  'Robotics',
+  'Security',
+  'Open House',
+] as const;
+
+export type EventCategory = (typeof EVENT_CATEGORIES)[number];
 
 export interface Membership {
   planId: string;
@@ -38,8 +61,16 @@ export interface Me {
   currentProject: string | null;
   skills: string[];
   directoryVisible: boolean;
+  /** True once the skills prompt has run — answered or skipped. */
+  skillsPrompted: boolean;
   memberSince: string | null;
   isActiveMember: boolean;
+  /**
+   * True once this account has a tour booked or attended. Decided by the API —
+   * the app never counts tour rows itself. Drives whether the tour invitation
+   * is offered at all.
+   */
+  hasBookedTour: boolean;
   membership: Membership | null;
 }
 
@@ -52,6 +83,16 @@ export interface Plan {
   isAddon: boolean;
   isPopular: boolean;
   requiresProof: boolean;
+  /**
+   * The bullet list on the plan card, in display order.
+   *
+   * Optional because the CLIENT cannot rely on it, even though the API always
+   * sends it: `usePlans` caches at the static tier, so a browser that loaded
+   * the plans before this field existed keeps serving that response for half an
+   * hour. Typed this way the compiler forces every reader to handle its
+   * absence, rather than discovering it as a crash inside an error boundary.
+   */
+  benefits?: string[];
   annualSavingCents: number | null;
 }
 
@@ -74,6 +115,19 @@ export interface DojoEvent {
   rsvpStatus: RsvpStatus | null;
   checkinCode: string | null;
   fillPercent: number;
+  /**
+   * The schedule behind a repeating event. Served on the detail only — the
+   * feed never shows it, so it is not paid for there.
+   */
+  series: EventSeries | null;
+}
+
+export interface EventSeries {
+  id: string;
+  /** Already a sentence, e.g. "Every week on Tuesday until August 25, 2026". */
+  summary: string;
+  /** The next few dates, this one included. Each is its own event. */
+  upcoming: Array<{ eventId: string; startsAt: string; endsAt: string }>;
 }
 
 export interface Resource {
@@ -101,6 +155,30 @@ export interface Slot {
   available: boolean;
 }
 
+/**
+ * A reservation as another member sees it.
+ *
+ * Carries no booking id and no reference on purpose — those are the owner's
+ * handles for modifying and cancelling. Mirrors `ReservationView` on the server.
+ */
+export interface RoomReservation {
+  resourceId: string;
+  resourceName: string;
+  startsAt: string;
+  endsAt: string;
+  /** `11:00 AM – 12:00 PM`, in the space's clock. */
+  window: string;
+  active: boolean;
+  /**
+   * Who has the room, or `null` when the viewer may not be told.
+   *
+   * The server decides: active members get the name, everyone else gets `null`,
+   * and a member who hid themselves from the directory reads as "A member".
+   * The UI must not infer anything from a null beyond "not shown".
+   */
+  bookedBy: string | null;
+}
+
 export interface Booking {
   id: string;
   reference: string;
@@ -125,6 +203,16 @@ export interface LiveSession {
   endedAt: string | null;
 }
 
+/**
+ * The answer to checking in or out. The occupancy the act produced rides along
+ * with the session so the dial can be updated without a second request — see
+ * `useCheckIn`. Null when nothing changed or the server's resample failed.
+ */
+export interface PresenceChange {
+  session: LiveSession;
+  occupancy: Occupancy | null;
+}
+
 export interface MemberCard {
   id: string;
   name: string;
@@ -143,6 +231,8 @@ export interface MemberCard {
 
 export interface Startup {
   id: string;
+  /** Addressable form of the name, e.g. `kettle-works`. */
+  slug: string;
   name: string;
   mark: string;
   tagline: string;
@@ -150,6 +240,18 @@ export interface Startup {
   foundedYear: string;
   hiring: boolean;
   website: string | null;
+  /** Display position. Staff reorder the list; everyone else just reads it. */
+  sortOrder: number;
+}
+
+export interface StartupInput {
+  name: string;
+  mark: string;
+  tagline: string;
+  stage: string;
+  foundedYear: string;
+  hiring: boolean;
+  website?: string | null;
 }
 
 export interface Occupancy {
@@ -180,8 +282,8 @@ export interface AboutContent {
   press: Array<{ id: string; outlet: string; year: string; headline: string; url: string | null }>;
   board: Array<{ id: string; name: string; role: string; initials: string }>;
   faqs: Array<{ id: string; question: string; answer: string }>;
-  impact: Array<{ value: string; label: string }>;
-  pillars: Array<{ name: string; line: string }>;
+  /** `key` is the stable list identity — `name` is editable copy and may collide. */
+  pillars: Array<{ key: string; name: string; line: string }>;
 }
 
 export interface NotificationPreferences {
@@ -208,41 +310,38 @@ export interface BillingPortalSession {
 }
 
 // ---------------------------------------------------------------------------
-// Door access
+// Site settings and Wi-Fi
+//
+// Door access types used to live here. Physical access is Kisi's now — it holds
+// the credential, decides, opens and keeps the history — so this app models
+// none of it.
 // ---------------------------------------------------------------------------
 
-export interface DigitalKey {
-  keyId: string;
-  active: boolean;
-  issuedAt: string;
-}
-
-export interface UnlockResult {
-  granted: boolean;
-  keyId: string;
-  unlockSeconds: number;
-  at: string;
-  message: string;
-}
-
-export interface DoorEvent {
-  id: number;
-  keyId: string;
-  granted: boolean;
-  reason: string | null;
-  at: string;
-}
-
-// ---------------------------------------------------------------------------
-// Site settings and uploads
-// ---------------------------------------------------------------------------
-
+/** Mirrors `SiteSettingsView` in `server/src/services/content.service.ts`. */
 export interface SiteSettings {
+  /** Public facts. Always present. */
   labStatus: string | null;
   labHours: string | null;
-  /** Members only. Null for a guest — which is what the UI gates the card on. */
+  /**
+   * The guest network. Public on purpose: its password is posted on the wall,
+   * and a visitor who cannot see it is exactly who it exists for.
+   */
+  wifiGuestSsid: string | null;
+  wifiGuestPassword: string | null;
+  /**
+   * The member network's name. Public too — knowing a network exists is not
+   * access to it. The credential that opens it is per-member and comes from
+   * `/me/wifi`, never from here.
+   */
   wifiSsid: string | null;
-  wifiPassword: string | null;
+}
+
+export interface WifiCredential {
+  ssid: string | null;
+  username: string;
+  pin: string;
+  issuedAt: string;
+  rotatedAt: string | null;
 }
 
 export type DocumentKind = 'student_id' | 'veteran_proof' | 'certification' | 'other';

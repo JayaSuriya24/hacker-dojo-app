@@ -1,11 +1,18 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { bookingService } from '../booking.service.js';
-import { resourceRepository } from '../../repositories/booking.repository.js';
+import { resourceRepository, sessionRepository } from '../../repositories/booking.repository.js';
+import { occupancyRepository } from '../../repositories/staff.repository.js';
+import { communityService } from '../community.service.js';
 import { AppError } from '../../utils/errors.js';
 import type { ResourceAvailabilityRow } from '../../types/database.js';
 
 vi.mock('../../repositories/booking.repository.js', () => ({
-  resourceRepository: { findById: vi.fn(), busyRanges: vi.fn(), list: vi.fn() },
+  resourceRepository: {
+    findById: vi.fn(),
+    busyRanges: vi.fn(),
+    busyRangesFor: vi.fn(),
+    list: vi.fn(),
+  },
   bookingRepository: {
     create: vi.fn(),
     listForProfile: vi.fn(),
@@ -13,8 +20,31 @@ vi.mock('../../repositories/booking.repository.js', () => ({
     cancel: vi.fn(),
     reschedule: vi.fn(),
   },
-  sessionRepository: { liveForProfile: vi.fn(), extend: vi.fn(), end: vi.fn() },
+  sessionRepository: {
+    liveForProfile: vi.fn(),
+    create: vi.fn(),
+    extend: vi.fn(),
+    end: vi.fn(),
+    endExpiredFor: vi.fn(),
+  },
 }));
+
+vi.mock('../../repositories/staff.repository.js', () => ({
+  occupancyRepository: { sample: vi.fn(), prune: vi.fn(), current: vi.fn() },
+}));
+
+// Check-in reads the dial back after sampling so it can answer with the new
+// number; without this the service would reach for a real Supabase client.
+vi.mock('../community.service.js', () => ({
+  communityService: { occupancy: vi.fn() },
+}));
+
+const DIAL = {
+  total: 2,
+  capacity: 100,
+  percent: 2,
+  zones: [{ name: 'Main Floor', headCount: 2, capacity: 55 }],
+};
 
 const laser: ResourceAvailabilityRow = {
   id: '11111111-1111-4111-8111-111111111111',
@@ -155,5 +185,216 @@ describe('bookingService.create', () => {
         durationHours: 1,
       }),
     ).rejects.toThrow(/future/);
+  });
+});
+
+/**
+ * The dial reads the LATEST occupancy sample, not a live count, so presence
+ * changes have to force a sample or the number stays wrong for up to a minute —
+ * long enough for the member who just pressed Check in to read the button as
+ * broken.
+ */
+describe('presence sampling', () => {
+  const liveRow = {
+    id: '33333333-3333-4333-8333-333333333333',
+    profile_id: user.id,
+    resource_id: null,
+    resource_name: 'Main Floor',
+    resource_kind: null,
+    zone_name: 'Main Floor',
+    started_at: '2026-08-10T18:00:00.000Z',
+    expires_at: '2026-08-10T22:00:00.000Z',
+    ended_at: null,
+  };
+
+  it('samples occupancy when a member checks in', async () => {
+    vi.mocked(sessionRepository.liveForProfile).mockResolvedValue(null);
+    vi.mocked(sessionRepository.create).mockResolvedValue(liveRow);
+
+    await bookingService.checkIn(user, {});
+
+    expect(occupancyRepository.sample).toHaveBeenCalledTimes(1);
+  });
+
+  /**
+   * The count has to travel on this response. `/occupancy` is cached for 15s,
+   * so a client that re-fetches instead is answered from its own HTTP cache
+   * with the pre-check-in number and shows a dial that ignores the tap.
+   */
+  it('answers check-in with the occupancy the check-in produced', async () => {
+    vi.mocked(sessionRepository.liveForProfile).mockResolvedValue(null);
+    vi.mocked(sessionRepository.create).mockResolvedValue(liveRow);
+    vi.mocked(communityService.occupancy).mockResolvedValue(DIAL);
+
+    await expect(bookingService.checkIn(user, {})).resolves.toMatchObject({ occupancy: DIAL });
+  });
+
+  it('answers check-out with the occupancy too', async () => {
+    vi.mocked(sessionRepository.liveForProfile).mockResolvedValue(liveRow);
+    vi.mocked(sessionRepository.end).mockResolvedValue({
+      ...liveRow,
+      ended_at: '2026-08-10T19:00:00.000Z',
+    });
+    vi.mocked(communityService.occupancy).mockResolvedValue(DIAL);
+
+    await expect(bookingService.endSession(user)).resolves.toMatchObject({ occupancy: DIAL });
+  });
+
+  it('samples occupancy when a member checks out', async () => {
+    vi.mocked(sessionRepository.liveForProfile).mockResolvedValue(liveRow);
+    vi.mocked(sessionRepository.end).mockResolvedValue({
+      ...liveRow,
+      ended_at: '2026-08-10T19:00:00.000Z',
+    });
+
+    await bookingService.endSession(user);
+
+    expect(occupancyRepository.sample).toHaveBeenCalledTimes(1);
+  });
+
+  // A stale dial is not worth failing a check-in over; the scheduled sample
+  // corrects it a minute later either way.
+  it('still checks the member in when the sample fails', async () => {
+    vi.mocked(sessionRepository.liveForProfile).mockResolvedValue(null);
+    vi.mocked(sessionRepository.create).mockResolvedValue(liveRow);
+    vi.mocked(occupancyRepository.sample).mockRejectedValue(new Error('postgrest down'));
+
+    await expect(bookingService.checkIn(user, {})).resolves.toMatchObject({
+      session: { id: liveRow.id },
+      // The caller is told the number is unavailable rather than given a wrong
+      // one, so the dial keeps what it has until the scheduled sample lands.
+      occupancy: null,
+    });
+  });
+
+  /**
+   * The lockout. `sessions_one_live_per_profile` keys on `ended_at is null`
+   * alone, while every read of a session also demands `expires_at > now()`. A
+   * session that timed out rather than being ended is therefore invisible to
+   * the read above and still holds the index slot, so the insert came back as a
+   * unique violation — "That already exists." — and stayed that way forever,
+   * because check-out could not see the row either.
+   */
+  it('closes a session that expired without a check-out before checking in again', async () => {
+    vi.mocked(sessionRepository.liveForProfile).mockResolvedValue(null);
+    vi.mocked(sessionRepository.create).mockResolvedValue(liveRow);
+
+    await bookingService.checkIn(user, {});
+
+    expect(sessionRepository.endExpiredFor).toHaveBeenCalledWith(user.accessToken, user.id);
+
+    // Order matters: the slot has to be free before the insert, or the insert
+    // is the thing that fails.
+    const reaped = vi.mocked(sessionRepository.endExpiredFor).mock.invocationCallOrder[0] ?? 0;
+    const created = vi.mocked(sessionRepository.create).mock.invocationCallOrder[0] ?? 0;
+    expect(reaped).toBeGreaterThan(0);
+    expect(reaped).toBeLessThan(created);
+  });
+
+  // Someone already on the floor keeps the session they have — the reap is for
+  // rows the read cannot see, not for the one it just returned.
+  it('does not close anything when the member is genuinely checked in', async () => {
+    vi.mocked(sessionRepository.liveForProfile).mockResolvedValue(liveRow);
+
+    await bookingService.checkIn(user, {});
+
+    expect(sessionRepository.endExpiredFor).not.toHaveBeenCalled();
+    expect(sessionRepository.create).not.toHaveBeenCalled();
+  });
+
+  // Re-entering does not open a second session, so there is nothing new to
+  // count and nothing to sample.
+  it('does not sample when the member is already checked in', async () => {
+    vi.mocked(sessionRepository.liveForProfile).mockResolvedValue(liveRow);
+
+    await bookingService.checkIn(user, {});
+
+    expect(occupancyRepository.sample).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Who may see whose name.
+ *
+ * The rule is the one the members directory already enforces in RLS —
+ * `directory_visible and is_active_member()` — restated here because this path
+ * runs as the service role and so has no RLS to fall back on. Each case below
+ * is a different person looking at the same booking.
+ */
+describe('bookingService.daySchedule — booker visibility', () => {
+  const hall: ResourceAvailabilityRow = {
+    ...laser,
+    id: '93ffabe1-51aa-4551-bb99-02a6251740dd',
+    name: 'Event Hall',
+    kind: 'room',
+  };
+
+  const activeMember = {
+    id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    email: 'ana@reyes.dev',
+    role: 'member' as const,
+    accessToken: 'token',
+    isActiveMember: true,
+  };
+
+  const lapsed = { ...activeMember, isActiveMember: false, role: 'guest' as const };
+
+  function bookingBy(fullName: string, directoryVisible: boolean) {
+    return [
+      {
+        resource_id: hall.id,
+        starts_at: '2026-08-13T18:00:00+00:00',
+        ends_at: '2026-08-13T19:00:00+00:00',
+        profiles: { full_name: fullName, directory_visible: directoryVisible },
+      },
+    ];
+  }
+
+  beforeEach(() => {
+    vi.mocked(resourceRepository.list).mockResolvedValue([hall]);
+    vi.mocked(resourceRepository.busyRangesFor).mockResolvedValue(bookingBy('Ana Reyes', true));
+  });
+
+  it('names the booker for an active member', async () => {
+    const [row] = await bookingService.daySchedule('room', '2026-08-13', activeMember);
+
+    expect(row?.bookedBy).toBe('Ana Reyes');
+    expect(row?.resourceName).toBe('Event Hall');
+  });
+
+  it('withholds the name from an anonymous caller', async () => {
+    const [row] = await bookingService.daySchedule('room', '2026-08-13', undefined);
+
+    // Absent, not blanked: the name never leaves the server.
+    expect(row?.bookedBy).toBeNull();
+    // The reservation itself still shows — the room really is taken.
+    expect(row?.window).toBeTruthy();
+  });
+
+  it('withholds the name from a signed-in but lapsed member', async () => {
+    const [row] = await bookingService.daySchedule('room', '2026-08-13', lapsed);
+
+    expect(row?.bookedBy).toBeNull();
+  });
+
+  /**
+   * Someone who opted out of the directory did not opt into being locatable by
+   * which room they are sitting in.
+   */
+  it('hides the name of a member who is not directory-visible', async () => {
+    vi.mocked(resourceRepository.busyRangesFor).mockResolvedValue(bookingBy('Ana Reyes', false));
+
+    const [row] = await bookingService.daySchedule('room', '2026-08-13', activeMember);
+
+    expect(row?.bookedBy).toBe('A member');
+    expect(row?.bookedBy).not.toContain('Ana');
+  });
+
+  it('never leaks a booking id or reference to anyone', async () => {
+    const [row] = await bookingService.daySchedule('room', '2026-08-13', activeMember);
+
+    expect(row).not.toHaveProperty('id');
+    expect(row).not.toHaveProperty('reference');
+    expect(row).not.toHaveProperty('profileId');
   });
 });

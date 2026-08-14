@@ -3,7 +3,11 @@ import type { z } from 'zod';
 import { bookingService } from '../services/booking.service.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { validatedQuery } from '../middleware/validate.js';
-import type { availabilityQuery, listResourcesQuery } from '../validators/index.js';
+import type {
+  availabilityQuery,
+  dayScheduleQuery,
+  listResourcesQuery,
+} from '../validators/index.js';
 import type { AuthenticatedRequest } from '../types/http.js';
 
 export const bookingController = {
@@ -15,6 +19,14 @@ export const bookingController = {
   availability: asyncHandler(async (req: Request, res: Response) => {
     const query = validatedQuery<z.infer<typeof availabilityQuery>>(req);
     const data = await bookingService.availability(req.params['id'] as string, query.day);
+    res.json({ data });
+  }),
+
+  daySchedule: asyncHandler(async (req: Request, res: Response) => {
+    const query = validatedQuery<z.infer<typeof dayScheduleQuery>>(req);
+    // `req.context.user` is undefined for an anonymous caller — that is the
+    // signal the service uses to withhold names.
+    const data = await bookingService.daySchedule(query.kind, query.day, req.context.user);
     res.json({ data });
   }),
 

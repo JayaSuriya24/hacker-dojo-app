@@ -32,6 +32,13 @@ export const updateProfileSchema = z
       .regex(/^\+?[0-9]{10,15}$/, 'Enter a mobile number with 10–15 digits.')
       .optional(),
     directory_visible: z.boolean().optional(),
+    /**
+     * Marks the skills prompt as run. Deliberately `literal(true)` and not a
+     * timestamp: the client says only THAT it asked, and the server decides
+     * when. It cannot be unset, so the prompt cannot be made to reappear by a
+     * crafted request.
+     */
+    skills_prompted: z.literal(true).optional(),
     avatar_path: z.string().max(300).optional(),
   })
   .strict();
@@ -61,12 +68,45 @@ export const hostEventSchema = z
   .object({
     title: safeText(160).pipe(z.string().min(3, 'Give your event a name.')),
     category: eventCategory,
-    expectedSize: z.coerce.number().int().min(1).max(500),
+    // Optional: the form no longer asks. Kept so an older client, or a
+    // steward with a real number, can still supply one.
+    expectedSize: z.coerce.number().int().min(1).max(500).default(30),
     preferredDate: isoDate,
     preferredRoom: safeText(80).pipe(z.string().min(1, 'Pick a room.')),
     notes: safeText(1000).optional(),
+
+    /** 24-hour wall clock at the Dojo, e.g. "18:30". */
+    preferredTime: z
+      .string()
+      .regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Use a 24-hour time like 18:30.')
+      .default('18:00'),
+    durationMinutes: z.coerce.number().int().min(15).max(1440).default(120),
+
+    repeatMode: z.enum(['once', 'weekly']).default('once'),
+    /** Postgres `dow`: 0 = Sunday … 6 = Saturday. */
+    repeatWeekdays: z.array(z.coerce.number().int().min(0).max(6)).max(7).default([]),
+    repeatIntervalWeeks: z.coerce.number().int().min(1).max(52).default(1),
+    repeatUntil: isoDate.optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((value, ctx) => {
+    // A weekly request with no days expands to nothing, so it is refused here
+    // rather than approved into an empty series.
+    if (value.repeatMode === 'weekly' && value.repeatWeekdays.length === 0) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['repeatWeekdays'],
+        message: 'Pick at least one day of the week.',
+      });
+    }
+    if (value.repeatUntil && value.repeatUntil < value.preferredDate) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['repeatUntil'],
+        message: 'The last date cannot be before the first.',
+      });
+    }
+  });
 
 // ---------------------------------------------------------------------------
 // Bookings
@@ -75,6 +115,12 @@ export const hostEventSchema = z
 export const listResourcesQuery = z.object({ kind: resourceKind.optional() });
 
 export const availabilityQuery = z.object({ day: isoDate });
+
+/** `day` is optional here: the home screen always means today. */
+export const dayScheduleQuery = z.object({
+  kind: resourceKind.default('room'),
+  day: isoDate.optional(),
+});
 
 export const createBookingSchema = z
   .object({
@@ -98,6 +144,80 @@ export const rescheduleBookingSchema = z
 // ---------------------------------------------------------------------------
 // Community
 // ---------------------------------------------------------------------------
+
+/* ---------------------------------------------------------------------------
+ * Startups
+ *
+ * The bounds mirror the check constraints added in the startup-management
+ * migration. Both exist: this returns a field-level error the form can point
+ * at, the constraint makes a bad row unwritable by any caller.
+ * ------------------------------------------------------------------------- */
+
+const startupFields = {
+  name: safeText(80),
+  /** The monogram on the card tile — two or three characters in practice. */
+  mark: safeText(4),
+  tagline: safeText(200),
+  stage: safeText(40),
+  /** Text, matching the column. Four digits. */
+  foundedYear: z.string().regex(/^[0-9]{4}$/, 'Use a four-digit year.'),
+  hiring: z.boolean(),
+  /**
+   * Absolute http(s) only. A bare "example.com" would be handed to the browser
+   * as a relative path and resolve against the app's own origin.
+   */
+  website: z
+    .string()
+    .trim()
+    .regex(/^https?:\/\/[^\s]+$/i, 'Use a full web address starting with https://')
+    .max(300)
+    .nullish(),
+  sortOrder: z.coerce.number().int().min(0).max(10_000),
+};
+
+export const createStartupSchema = z
+  .object({
+    name: startupFields.name,
+    mark: startupFields.mark,
+    tagline: startupFields.tagline,
+    stage: startupFields.stage,
+    foundedYear: startupFields.foundedYear,
+    hiring: startupFields.hiring.default(false),
+    website: startupFields.website,
+    // Omitted means "put it at the end", which the service works out.
+    sortOrder: startupFields.sortOrder.optional(),
+  })
+  .strict();
+
+/** Every field optional, but at least one required — an empty PATCH is a bug. */
+export const updateStartupSchema = z
+  .object({
+    name: startupFields.name.optional(),
+    mark: startupFields.mark.optional(),
+    tagline: startupFields.tagline.optional(),
+    stage: startupFields.stage.optional(),
+    foundedYear: startupFields.foundedYear.optional(),
+    hiring: startupFields.hiring.optional(),
+    website: startupFields.website,
+    sortOrder: startupFields.sortOrder.optional(),
+  })
+  .strict()
+  .refine((patch) => Object.keys(patch).length > 0, {
+    message: 'Change at least one field.',
+  });
+
+export const reorderStartupsSchema = z
+  .object({ orderedIds: z.array(z.uuid()).min(1).max(500) })
+  .strict();
+
+export const startupQuery = z
+  .object({
+    search: z.string().trim().max(80).optional(),
+    stage: z.string().trim().max(40).optional(),
+    // Arrives as a query string, so the literal strings are what to expect.
+    hiring: z.enum(['true', 'false']).optional(),
+  })
+  .strict();
 
 export const directoryQuery = paginationQuery.extend({
   search: z.string().trim().max(80).optional(),
@@ -144,19 +264,6 @@ export const bookTourSchema = z
     scheduledFor: isoDateTime,
     guestName: safeText(120).optional(),
     guestEmail: z.email().optional(),
-  })
-  .strict();
-
-// ---------------------------------------------------------------------------
-// Door access
-// ---------------------------------------------------------------------------
-
-export const unlockDoorSchema = z
-  .object({
-    // A short free-text hint recorded in the audit trail — "iPhone 15, Ana's".
-    // Bounded and stripped so a log row cannot be used to smuggle markup into
-    // the admin console that reads it back.
-    deviceHint: safeText(120).optional(),
   })
   .strict();
 

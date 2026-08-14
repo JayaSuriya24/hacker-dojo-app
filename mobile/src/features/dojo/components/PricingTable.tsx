@@ -33,6 +33,16 @@ export function PricingTable({
         // regardless of the toggle, so showing it an annual price would quote a
         // number that does not exist in Stripe.
         const effective = resolvePeriod(period, plan);
+        /*
+         * `benefits` may be absent, and the screen must not die when it is.
+         *
+         * `usePlans` caches at the static tier, so a client that loaded the
+         * plans before this field existed keeps serving that response for half
+         * an hour — and `plan.benefits.length` on it threw, taking the whole
+         * Dojo tab down behind the error boundary. The same applies to any app
+         * build older than the server it is talking to.
+         */
+        const benefits = plan.benefits ?? [];
         const showAnnual = effective === 'year';
         const cents = showAnnual ? (plan.priceAnnualCents as number) : plan.priceMonthlyCents;
         const isCurrent = isMember && plan.id === activePlanId;
@@ -42,7 +52,9 @@ export function PricingTable({
             key={plan.id}
             borderColor={plan.isPopular ? '$accentBorder' : '$borderColor'}
             accessible
-            aria-label={`${plan.name}, ${formatCurrency(cents)} per ${showAnnual ? 'year' : 'month'}. ${plan.description}`}
+            aria-label={`${plan.name}, ${formatCurrency(cents)} per ${showAnnual ? 'year' : 'month'}. ${
+              plan.description || benefits.join('. ')
+            }`}
           >
             <XStack alignItems="center" gap={space[2]} flexWrap="wrap">
               <Text variant="title">{plan.name}</Text>
@@ -60,12 +72,39 @@ export function PricingTable({
               </Text>
             </XStack>
 
-            <Text variant="small" tone="muted" marginTop={space[2]}>
-              {plan.description}
-              {showAnnual && plan.priceAnnualCents
-                ? ` Works out to ${formatCurrency(Math.round(plan.priceAnnualCents / 12))} a month.`
-                : ''}
-            </Text>
+            {/*
+              The note above the list, where a plan has one. Student and
+              Standard have none — an empty paragraph would open a gap the
+              other two cards do not have, so it is not rendered at all.
+            */}
+            {plan.description ? (
+              <Text variant="small" tone="muted" marginTop={space[2]}>
+                {plan.description}
+                {showAnnual && plan.priceAnnualCents
+                  ? ` Works out to ${formatCurrency(Math.round(plan.priceAnnualCents / 12))} a month.`
+                  : ''}
+              </Text>
+            ) : null}
+
+            {/*
+              What the plan actually includes. A list rather than a sentence
+              because that is how it is sold and how it is compared — someone
+              scanning three cards is looking for the line that differs.
+            */}
+            {benefits.length > 0 ? (
+              <YStack gap={space[1]} marginTop={space[3]}>
+                {benefits.map((benefit) => (
+                  <XStack key={benefit} gap={space[2]} alignItems="flex-start">
+                    <Text variant="small" tone="accent" aria-hidden>
+                      ·
+                    </Text>
+                    <Text variant="small" tone="muted" flex={1}>
+                      {benefit}
+                    </Text>
+                  </XStack>
+                ))}
+              </YStack>
+            ) : null}
 
             <YStack marginTop={space[4]}>
               <Button

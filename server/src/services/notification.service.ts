@@ -1,6 +1,7 @@
 import { env } from '../config/env.js';
 import { logger } from '../config/logger.js';
 import { notificationRepository } from '../repositories/notification.repository.js';
+import { emailService, isEmailConfigured } from './email.service.js';
 import { formatDojoRange } from '../utils/time.js';
 import type { PushTargetRow } from '../types/database.js';
 
@@ -202,6 +203,65 @@ export const notificationService = {
     }
 
     return report;
+  },
+
+  /**
+   * Email everyone about a new event.
+   *
+   * Separate from `announceEvent` below rather than folded into it, because the
+   * two have different audiences: push can only reach a device that registered
+   * a token, email reaches every profile. Merging them would mean either
+   * emailing only the subset with push tokens, or pushing to people who have
+   * none — both wrong.
+   *
+   * Sends one at a time and keeps going past failures. A bad address is one
+   * member who misses one event; aborting the loop would silence everyone after
+   * them in the list. The caller must not await this — see `fulfil`.
+   */
+  async emailEventAnnouncement(input: {
+    title: string;
+    startsAt: string;
+    endsAt: string;
+    roomName: string;
+    hostName: string;
+    description: string | null;
+  }): Promise<SendReport> {
+    if (!isEmailConfigured) {
+      logger.warn({ title: input.title }, 'Email is not configured — event announcement not sent');
+      return { requested: 0, sent: 0, skipped: 0, failed: 0 };
+    }
+
+    const audience = await notificationRepository.emailAudienceForEvents();
+    const when = formatDojoRange(input.startsAt, input.endsAt);
+
+    let sent = 0;
+    let failed = 0;
+
+    for (const person of audience) {
+      try {
+        const result = await emailService.sendEventAnnouncement({
+          to: person.email,
+          name: person.full_name,
+          title: input.title,
+          when,
+          roomName: input.roomName,
+          hostName: input.hostName,
+          description: input.description,
+        });
+        if (result.delivered) sent += 1;
+        else failed += 1;
+      } catch (error) {
+        failed += 1;
+        logger.warn({ error, to: person.email }, 'Event announcement email failed');
+      }
+    }
+
+    logger.info(
+      { title: input.title, requested: audience.length, sent, failed },
+      'Event announcement emailed',
+    );
+
+    return { requested: audience.length, sent, skipped: 0, failed };
   },
 
   /** Announce a newly published event to everyone who asked for event news. */

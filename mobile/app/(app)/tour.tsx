@@ -1,6 +1,5 @@
 import { useMemo, useState } from 'react';
 import { Pressable, ScrollView, View } from 'react-native';
-import { router } from 'expo-router';
 import { XStack, YStack } from 'tamagui';
 import { SheetScreen } from '~/components/SheetScreen';
 import { Button, Text } from '~/components/ui';
@@ -9,6 +8,7 @@ import { usePalette } from '~/providers/ThemeProvider';
 import { userMessage } from '~/services/api/errors';
 import { nextDays } from '~/utils/format';
 import { radius, space } from '~/theme/tokens';
+import { goBackOr } from '~/utils/navigation';
 
 const TIMES = [
   { label: '1:00 PM', hour: 13, minute: 0 },
@@ -72,7 +72,7 @@ export default function TourSheet() {
             Ask for the steward at the front desk. It takes about thirty minutes.
           </Text>
           <YStack alignSelf="stretch" marginTop={space[4]}>
-            <Button variant="primary" fullWidth onPress={() => router.back()}>
+            <Button variant="primary" fullWidth onPress={() => goBackOr()}>
               Done
             </Button>
           </YStack>

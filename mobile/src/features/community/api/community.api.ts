@@ -6,6 +6,7 @@ import type {
   Program,
   SiteSettings,
   Startup,
+  StartupInput,
 } from '~/types/domain';
 
 export interface DirectoryFilters {
@@ -30,7 +31,25 @@ export const communityApi = {
 
   member: (id: string) => api.get<MemberCard>(`/members/${id}`),
 
-  startups: () => api.get<Startup[]>('/startups', { anonymous: true }),
+  /**
+   * The public list. Search and filter are query parameters on the same
+   * endpoint, so an unfiltered call is exactly the request this always made.
+   */
+  startups: (query?: { search?: string; stage?: string; hiring?: string }) =>
+    api.get<Startup[]>('/startups', { query, anonymous: true }),
+
+  /** Takes a uuid or a slug. Public, like the list. */
+  startup: (key: string) => api.get<Startup>(`/startups/${key}`, { anonymous: true }),
+
+  createStartup: (input: StartupInput) => api.post<Startup>('/startups', input, { retry: false }),
+
+  updateStartup: (id: string, patch: Partial<StartupInput>) =>
+    api.patch<Startup>(`/startups/${id}`, patch),
+
+  deleteStartup: (id: string) => api.delete<void>(`/startups/${id}`, { retry: false }),
+
+  reorderStartups: (orderedIds: string[]) =>
+    api.patch<Startup[]>('/startups/reorder', { orderedIds }),
 
   occupancy: () => api.get<Occupancy>('/occupancy', { anonymous: true }),
 

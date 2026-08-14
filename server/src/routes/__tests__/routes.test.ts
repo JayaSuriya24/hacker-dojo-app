@@ -161,18 +161,38 @@ describe('membership gating', () => {
   });
 
   /**
-   * The door is the most consequential gated route in the app, so it is checked
-   * explicitly rather than assumed to be covered by the pattern above.
+   * The Wi-Fi PIN is the most consequential member-only credential this API
+   * still issues, so it is checked explicitly rather than assumed to be covered
+   * by the pattern above. It took over that role from the door unlock, which
+   * this API no longer serves.
    */
-  it('refuses the unlock endpoint to a lapsed member', async () => {
+  it('refuses the Wi-Fi credential to a lapsed member', async () => {
     hasMembership = false;
 
+    const response = await request(app).get('/v1/me/wifi').set('Authorization', 'Bearer t');
+
+    expect(response.status).toBe(403);
+  });
+
+  /**
+   * Physical access belongs to Kisi. These endpoints existed and were removed,
+   * and this asserts they stay removed — a re-added door route would be a
+   * second authorisation path that cannot actually move the lock, which is the
+   * exact drift the migration to Kisi was meant to end.
+   */
+  it.each(['/v1/me/key', '/v1/me/key/history'])('no longer serves %s', async (path) => {
+    const response = await request(app).get(path).set('Authorization', 'Bearer t');
+
+    expect(response.status).toBe(404);
+  });
+
+  it('no longer serves the unlock endpoint', async () => {
     const response = await request(app)
       .post('/v1/me/key/unlock')
       .set('Authorization', 'Bearer t')
       .send({});
 
-    expect(response.status).toBe(403);
+    expect(response.status).toBe(404);
   });
 });
 

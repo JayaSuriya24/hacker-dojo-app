@@ -53,6 +53,33 @@ max_frequency = "60s"
 otp_length = 6
 otp_expiry = 600
 
+# Custom SMTP, via Resend.
+#
+# Without this block Supabase Auth falls back to its own built-in sender, which
+# is documented as test-only: a few messages an hour, and delivery restricted to
+# the project team's own addresses. That is why signup "worked" while nobody
+# outside the team could ever confirm — the account was created and the
+# confirmation mail was simply never delivered.
+#
+# This is SEPARATE from `server/src/services/email.service.ts`, which calls the
+# Resend HTTP API for the app's own mail (the membership welcome and its Wi-Fi
+# PIN). Auth cannot use that path — Supabase sends confirmation mail itself and
+# only ever speaks SMTP — so the same Resend account is reached two ways.
+#
+# `admin_email` MUST be on a domain verified in Resend. The shared
+# `onboarding@resend.dev` sender needs no verification but only delivers to the
+# Resend account owner, which reproduces the exact bug this block fixes.
+[auth.email.smtp]
+enabled = true
+host = "smtp.resend.com"
+port = 587
+# Resend's SMTP username is the literal string "resend" for every account; the
+# API key is the password.
+user = "resend"
+pass = "env(SUPABASE_AUTH_SMTP_PASS)"
+admin_email = "env(SUPABASE_AUTH_SMTP_ADMIN_EMAIL)"
+sender_name = "Hacker Dojo"
+
 # Custom email templates need either a paid plan or a custom SMTP provider —
 # `config push` fails the WHOLE auth update with a 400 otherwise, so this stays
 # commented until [auth.email.smtp] is configured. It still applies to a local

@@ -1,5 +1,13 @@
 import { api } from '~/services/api/client';
-import type { Booking, LiveSession, Resource, ResourceKind, Slot } from '~/types/domain';
+import type {
+  Booking,
+  LiveSession,
+  PresenceChange,
+  Resource,
+  ResourceKind,
+  RoomReservation,
+  Slot,
+} from '~/types/domain';
 
 export const bookingApi = {
   resources: (kind?: ResourceKind) =>
@@ -8,6 +16,10 @@ export const bookingApi = {
   /** @param day YYYY-MM-DD */
   availability: (resourceId: string, day: string) =>
     api.get<Slot[]>(`/resources/${resourceId}/availability`, { query: { day } }),
+
+  /** Today's reservations for everyone. Anonymous, and readable signed out. */
+  schedule: (kind: ResourceKind) =>
+    api.get<RoomReservation[]>('/resources/schedule', { query: { kind }, anonymous: true }),
 
   myBookings: () => api.get<Booking[]>('/me/bookings'),
 
@@ -26,8 +38,12 @@ export const bookingApi = {
   cancel: (id: string) => api.delete<void>(`/bookings/${id}`),
 
   liveSession: () => api.get<LiveSession | null>('/me/session'),
-  /** Check in to the floor — what populates `sessions` and the occupancy dial. */
-  checkIn: (input: { resourceId?: string } = {}) => api.post<LiveSession>('/me/session', input),
+  /**
+   * Check in to the floor — what populates `sessions` and the occupancy dial.
+   * Answers with the new occupancy as well as the session; `/occupancy` is
+   * cached for 15s, so re-fetching it here would read the pre-check-in number.
+   */
+  checkIn: (input: { resourceId?: string } = {}) => api.post<PresenceChange>('/me/session', input),
   extendSession: () => api.post<LiveSession>('/me/session/extend'),
-  endSession: () => api.post<LiveSession>('/me/session/end'),
+  endSession: () => api.post<PresenceChange>('/me/session/end'),
 };

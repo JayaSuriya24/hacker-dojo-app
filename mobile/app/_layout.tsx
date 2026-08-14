@@ -14,6 +14,7 @@ import { useDeepLinks } from '~/hooks/useDeepLinks';
 import { useAppFonts } from '~/theme/useAppFonts';
 import { logger } from '~/services/logger';
 import { silenceWebPropWarnings } from '~/services/silenceWebPropWarnings';
+import { resetWebButtonAlign } from '~/services/resetWebButtonAlign';
 
 // Hold the native splash until the persisted session AND the design system's
 // typefaces have been read, so an already-signed-in member never sees the
@@ -23,6 +24,10 @@ void SplashScreen.preventAutoHideAsync();
 // Drops one third-party `collapsable` warning on web in development. Scoped to
 // that exact message so our own prop mistakes still surface — see the module.
 silenceWebPropWarnings();
+
+// Undoes the browser's `button { text-align: center }`, which react-native-web
+// inherits into every pressable card and which native has no equivalent of.
+resetWebButtonAlign();
 
 /**
  * The provider stack. Order is not arbitrary:

@@ -126,6 +126,12 @@ npm run mobile
 On a physical device set `EXPO_PUBLIC_API_BASE_URL` to your machine's LAN IP —
 `localhost` on a phone means the phone.
 
+The script raises Node's heap to 8 GB. Metro accumulates memory per bundle and
+does not give it back, so a long session — a few hundred rebuilds — exhausts the
+4 GB default and dies with `Ineffective mark-compacts near heap limit`. The
+larger ceiling delays that rather than curing it; if it still happens, restart
+the dev server.
+
 Native modules (Stripe, Secure Store, Apple Authentication) need a development
 build rather than Expo Go:
 

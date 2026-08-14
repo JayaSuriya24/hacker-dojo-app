@@ -15,6 +15,7 @@ import { usePalette } from '~/providers/ThemeProvider';
 import { userMessage } from '~/services/api/errors';
 import { nextDays, toDateKey } from '~/utils/format';
 import { radius, space } from '~/theme/tokens';
+import { goBackOr } from '~/utils/navigation';
 
 /**
  * The booking sheet.
@@ -115,13 +116,13 @@ export default function BookingSheet() {
               variant="primary"
               fullWidth
               onPress={() => {
-                router.back();
+                goBackOr();
                 router.push('/(app)/(tabs)/book');
               }}
             >
               See my bookings
             </Button>
-            <Button variant="ghost" fullWidth onPress={() => router.back()}>
+            <Button variant="ghost" fullWidth onPress={() => goBackOr()}>
               Done
             </Button>
           </YStack>

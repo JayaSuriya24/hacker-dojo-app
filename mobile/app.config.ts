@@ -129,6 +129,22 @@ const config: ExpoConfig = {
       { icon: './assets/notification-icon.png', color: '#E33230', defaultChannel: 'default' },
     ],
     ['expo-image-picker', { photosPermission: 'Choose a photo for your member profile.' }],
+    /*
+     * Calendar. The strings are what iOS and Android show in the permission
+     * dialog, so they say what the app will do with the access rather than
+     * asking for it in the abstract — "Hacker Dojo would like to access your
+     * calendar" with no reason is the prompt people decline.
+     *
+     * Write-only is not requested separately: the flow reads the device's
+     * default calendar to know where to put the event, which needs read access
+     * on both platforms.
+     */
+    [
+      'expo-calendar',
+      {
+        calendarPermission: 'Add events you RSVP to straight into your calendar.',
+      },
+    ],
     [
       '@stripe/stripe-react-native',
       {

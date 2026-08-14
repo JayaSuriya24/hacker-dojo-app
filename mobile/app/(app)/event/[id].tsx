@@ -1,88 +1,70 @@
-import { useMemo } from 'react';
-import { View } from 'react-native';
+import { useCallback, useRef, useState } from 'react';
 import { useLocalSearchParams } from 'expo-router';
 import { XStack, YStack } from 'tamagui';
 import { SheetScreen } from '~/components/SheetScreen';
 import { Button, Card, Chip, ErrorState, ListSkeleton, Text } from '~/components/ui';
 import { useCancelRsvp, useEvent, useRsvp } from '~/features/events/hooks/useEvents';
-import { usePalette } from '~/providers/ThemeProvider';
+import { EventCover } from '~/features/events/components/EventCover';
+import { SeriesSchedule } from '~/features/events/components/SeriesSchedule';
+import { addEventToCalendar } from '~/features/events/services/calendar';
 import { formatDateRange } from '~/utils/format';
-import { radius, space } from '~/theme/tokens';
-
-/**
- * A deterministic QR-style block for the check-in code.
- *
- * Rendered from a hash of the code rather than being a scannable QR: the front
- * desk verifies the alphanumeric code printed below it, and shipping a real QR
- * encoder for a code a steward reads aloud would be weight for nothing. The
- * pattern is stable per code so it looks like the same badge every time.
- *
- * Both colours come from the theme. The badge previously hardcoded a `#ffffff`
- * ground and painted its cells in `palette.text` — which on the dark ground is
- * `#e9e9ed`, so the pattern was near-white on white and effectively invisible
- * in dark mode. It was also the one place in the app where a hex escaped the
- * theme layer, which is the rule `tokens.ts` exists to enforce.
- *
- * The pair is deliberately inverted rather than themed straight through: a
- * scannable-looking badge needs high contrast between its two colours in both
- * appearances, so it takes the ground/ink pair rather than surface/text.
- */
-function CheckinPattern({ code }: { code: string }) {
-  const palette = usePalette();
-
-  // On the light ground `textInverse` is the near-white neutral and the ink is
-  // the near-black one; on the dark ground both swap, so the badge keeps its
-  // contrast rather than inheriting the page's.
-  const ink = palette.text;
-
-  const cells = useMemo(() => {
-    let hash = 0;
-    for (let i = 0; i < code.length; i += 1) hash = (hash * 31 + code.charCodeAt(i)) >>> 0;
-
-    return Array.from({ length: 121 }, (_, index) => {
-      const row = Math.floor(index / 11);
-      const column = index % 11;
-      // Finder squares in three corners, as a real QR has.
-      const finder = (row < 3 && column < 3) || (row < 3 && column > 7) || (row > 7 && column < 3);
-      return finder || (row * 7 + column * 11 + ((row * column) % 5) + hash) % 3 === 0;
-    });
-  }, [code]);
-
-  return (
-    <View
-      accessible
-      role="img"
-      aria-label={`Check-in code ${code.split('').join(' ')}`}
-      style={{
-        width: 196,
-        height: 196,
-        padding: 12,
-        borderRadius: radius.md,
-        backgroundColor: palette.textInverse,
-        flexDirection: 'row',
-        flexWrap: 'wrap',
-        alignSelf: 'center',
-      }}
-    >
-      {cells.map((on, index) => (
-        <View
-          key={index}
-          style={{
-            width: `${100 / 11}%`,
-            height: `${100 / 11}%`,
-            backgroundColor: on ? ink : 'transparent',
-          }}
-        />
-      ))}
-    </View>
-  );
-}
+import { space } from '~/theme/tokens';
 
 export default function EventSheet() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const query = useEvent(id ?? '');
   const rsvp = useRsvp();
   const cancelRsvp = useCancelRsvp();
+
+  /*
+   * Calendar state lives here rather than in the panel below, because these
+   * hooks must run before the loading and error branches return — React
+   * requires the same hooks in the same order on every render.
+   */
+  const [addingToCalendar, setAddingToCalendar] = useState(false);
+  const [added, setAdded] = useState(false);
+  const [addedVia, setAddedVia] = useState<'device' | 'download' | 'existing' | null>(null);
+  const [calendarError, setCalendarError] = useState<string | null>(null);
+  /*
+   * A second guard against double-adds, separate from the disabled button.
+   * `setAddingToCalendar(true)` does not take effect until the next render, so
+   * two taps inside the same frame both pass the state check and both write.
+   * A ref changes synchronously, which is what makes it the right tool here.
+   */
+  const inFlight = useRef(false);
+
+  const event = query.data;
+
+  const handleAddToCalendar = useCallback(async () => {
+    if (!event || inFlight.current) return;
+
+    inFlight.current = true;
+    setAddingToCalendar(true);
+    // Cleared up front so a retry after a denial does not sit under the old
+    // error while it runs.
+    setCalendarError(null);
+
+    const outcome = await addEventToCalendar({
+      title: event.title,
+      startsAt: event.startsAt,
+      endsAt: event.endsAt,
+      roomName: event.roomName,
+      description: event.description,
+    });
+
+    inFlight.current = false;
+    setAddingToCalendar(false);
+
+    if (outcome.ok) {
+      setAdded(true);
+      setAddedVia(outcome.via);
+      return;
+    }
+
+    // Left un-added on purpose: the button returns to "Add to Calendar" so the
+    // failure is retryable, which a success state would quietly prevent.
+    setCalendarError(outcome.message);
+  }, [event]);
 
   if (query.isPending) {
     return (
@@ -92,7 +74,7 @@ export default function EventSheet() {
     );
   }
 
-  if (query.isError || !query.data) {
+  if (query.isError || !event) {
     return (
       <SheetScreen title="Event">
         <ErrorState error={query.error} onRetry={() => void query.refetch()} />
@@ -100,7 +82,6 @@ export default function EventSheet() {
     );
   }
 
-  const event = query.data;
   const going = event.rsvpStatus === 'going';
   const waitlisted = event.rsvpStatus === 'waitlisted';
 
@@ -129,6 +110,8 @@ export default function EventSheet() {
       }
     >
       <YStack gap={space[5]}>
+        <EventCover path={event.coverPath} title={event.title} />
+
         <Card tone="alt">
           <Text variant="small" tone="muted">
             {formatDateRange(event.startsAt, event.endsAt)}
@@ -147,25 +130,56 @@ export default function EventSheet() {
           </XStack>
         </Card>
 
+        {event.series ? <SeriesSchedule series={event.series} currentEventId={event.id} /> : null}
+
         {event.description ? (
           <Text variant="small" tone="muted">
             {event.description}
           </Text>
         ) : null}
 
-        {/* The check-in badge appears only once there is an RSVP to check in
-            against — showing an empty placeholder would invite a member to hold
-            up a blank square at the desk. */}
-        {going && event.checkinCode ? (
-          <YStack gap={space[4]} alignItems="center" marginTop={space[3]}>
-            <Text variant="eyebrow">Event check-in</Text>
-            <CheckinPattern code={event.checkinCode} />
-            <Text variant="mono" tone="accent">
-              {event.checkinCode}
-            </Text>
-            <Text variant="caption" tone="subtle" center>
-              Show this at the front desk.
-            </Text>
+        {/*
+          Shown only once the RSVP exists, so there is something to confirm.
+
+          This replaced a QR-style check-in badge. The badge was only useful in
+          the few seconds at the door; what a member wants immediately after
+          saying "I'm going" is not to forget, which is what the calendar is
+          for. The RSVP itself is untouched — the attendance count, the
+          waitlist and the check-in code the server issues all still work
+          exactly as before; only this panel changed.
+        */}
+        {going ? (
+          <YStack gap={space[3]} marginTop={space[3]}>
+            <Text variant="eyebrow">You&apos;re confirmed</Text>
+
+            <Button
+              variant={added ? 'secondary' : 'primary'}
+              fullWidth
+              loading={addingToCalendar}
+              disabled={addingToCalendar || added}
+              onPress={() => void handleAddToCalendar()}
+              aria-label={added ? 'Added to your calendar' : 'Add this event to your calendar'}
+            >
+              {added ? 'Added to your calendar' : 'Add to Calendar'}
+            </Button>
+
+            {calendarError ? (
+              <Text variant="small" tone="error" aria-live="polite">
+                {calendarError}
+              </Text>
+            ) : added ? (
+              <Text variant="caption" tone="subtle" aria-live="polite">
+                {addedVia === 'download'
+                  ? 'Invite downloaded — open it to add the event to your calendar.'
+                  : addedVia === 'existing'
+                    ? 'This event was already on your calendar.'
+                    : `Saved to your calendar for ${event.roomName}.`}
+              </Text>
+            ) : (
+              <Text variant="caption" tone="subtle">
+                We&apos;ll put the time, room and description straight into your calendar.
+              </Text>
+            )}
           </YStack>
         ) : null}
       </YStack>

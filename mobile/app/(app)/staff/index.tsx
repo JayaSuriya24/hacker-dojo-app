@@ -27,6 +27,7 @@ import { usePreferencesStore } from '~/store/preferences.store';
 import { usePalette } from '~/providers/ThemeProvider';
 import { space } from '~/theme/tokens';
 import type { StaffQueueItem, StaffQueueKind } from '~/types/domain';
+import { goBackOr } from '~/utils/navigation';
 
 /**
  * The steward's dashboard.
@@ -162,7 +163,7 @@ export default function StaffDashboardScreen() {
             title="Stewards only"
             description="This area is for Dojo staff."
             actionLabel="Back"
-            onAction={() => router.back()}
+            onAction={() => goBackOr()}
           />
         </Screen>
       </>

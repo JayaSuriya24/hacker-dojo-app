@@ -6,6 +6,7 @@ import { XStack, YStack } from 'tamagui';
 import { Button, Text } from '~/components/ui';
 import { usePalette, useResolvedScheme } from '~/providers/ThemeProvider';
 import { authService } from '../services/auth.service';
+import { authProviders } from '../providers';
 import { userMessage } from '~/services/api/errors';
 import { space } from '~/theme/tokens';
 
@@ -71,7 +72,7 @@ export function SocialSignIn({ onError }: { onError: (message: string) => void }
         <View style={{ flex: 1, height: 1, backgroundColor: palette.border }} />
       </XStack>
 
-      {Platform.OS === 'ios' ? (
+      {authProviders.apple && Platform.OS === 'ios' ? (
         <AppleAuthentication.AppleAuthenticationButton
           buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
           // Apple requires the button to contrast with its background; follow

@@ -3,10 +3,15 @@ import {
   resourceRepository,
   sessionRepository,
 } from '../repositories/booking.repository.js';
+import { occupancyRepository } from '../repositories/staff.repository.js';
+import { communityService, type OccupancyView } from './community.service.js';
+import { logger } from '../config/logger.js';
 import { AppError } from '../utils/errors.js';
 import {
   DOJO_TIMEZONE,
+  dojoToday,
   formatClockTime,
+  formatDojoClockRange,
   formatDojoRange,
   fromDojoWallClock,
   parseClockTime,
@@ -20,6 +25,31 @@ export interface SlotView {
   label: string;
   startsAt: string;
   available: boolean;
+}
+
+/**
+ * One reservation as another member sees it.
+ *
+ * Still no booking id and no reference — those are the owner's handles for
+ * modifying or cancelling, and nobody else has business holding them.
+ */
+export interface ReservationView {
+  resourceId: string;
+  resourceName: string;
+  startsAt: string;
+  endsAt: string;
+  /** `11:00 AM – 12:00 PM`, in the space's clock. */
+  window: string;
+  /** True while it is happening right now. */
+  active: boolean;
+  /**
+   * Who has the room.
+   *
+   * `null` for anyone who is not an active member — the name is never sent, not
+   * sent-and-hidden. `'A member'` when the booker has directory visibility
+   * turned off.
+   */
+  bookedBy: string | null;
 }
 
 export interface BookingView {
@@ -70,6 +100,16 @@ export interface LiveSessionView {
   startedAt: string;
   expiresAt: string;
   endedAt: string | null;
+}
+
+/**
+ * What check-in and check-out answer: the session, plus the occupancy the act
+ * produced so the caller does not have to ask for it. `occupancy` is null when
+ * nothing changed (already checked in) or the resample failed.
+ */
+export interface PresenceChange {
+  session: LiveSessionView;
+  occupancy: OccupancyView | null;
 }
 
 const HOUR_MS = 60 * 60 * 1000;
@@ -142,6 +182,36 @@ function toLiveSessionView(row: {
   };
 }
 
+/**
+ * Take an occupancy sample now, because presence just changed, and hand back
+ * the number it produced.
+ *
+ * `current_occupancy` reports the LATEST SAMPLE per zone, not a live count, and
+ * the scheduler samples on a timer — so without this a member who checks in
+ * watches the dial sit on the old number for up to a minute and concludes the
+ * button is broken. Sampling here makes the very next read correct.
+ *
+ * The sample is RETURNED rather than left for the app to go and fetch. Making
+ * the client re-request it looks equivalent and is not: `/occupancy` is sent
+ * with `Cache-Control: max-age=15` to survive the 9am stampede, so the refetch
+ * that follows check-in is served from the device's HTTP cache and yields the
+ * pre-check-in number — the dial then sits wrong until the 60s poll. Carrying
+ * the count on this response keeps that cache useful to everyone else while the
+ * member who just acted sees the truth immediately.
+ *
+ * A failure is swallowed and reported as null. A stale dial is not worth
+ * failing a check-in over, and the next scheduled sample corrects it.
+ */
+async function resampleOccupancy(reason: string): Promise<OccupancyView | null> {
+  try {
+    await occupancyRepository.sample();
+    return await communityService.occupancy();
+  } catch (error) {
+    logger.warn({ err: error, reason }, 'Occupancy resample failed');
+    return null;
+  }
+}
+
 export const bookingService = {
   async listResources(kind?: ResourceKind): Promise<ResourceView[]> {
     const rows = await resourceRepository.list(kind);
@@ -204,6 +274,72 @@ export const bookingService = {
     }
 
     return slots;
+  },
+
+  /**
+   * Every reservation on one day, for one kind of resource.
+   *
+   * Times are public, as they already were on the availability grid. The
+   * BOOKER'S NAME is not: it is attached only for a caller who is an active
+   * member AND only for a member who has not hidden themselves, which is the
+   * identical rule the members directory enforces in RLS
+   * (`directory_visible and is_active_member()`).
+   *
+   * Two consequences worth stating, because they are easy to misread as bugs:
+   *
+   *   · A signed-out visitor and a lapsed member see the room and the window
+   *     with no name at all — not "Anonymous", the field is simply absent.
+   *   · A member who turned off directory visibility shows as "A member" to
+   *     everyone else. Their booking still appears, because the room really is
+   *     taken; only the identity is withheld. Someone who opted out of being
+   *     listed did not opt into being findable by which room they are in.
+   */
+  async daySchedule(
+    kind: ResourceKind,
+    day?: string,
+    viewer?: AuthenticatedUser | undefined,
+  ): Promise<ReservationView[]> {
+    const target = day ?? dojoToday();
+
+    const date = parseIsoDate(target);
+    if (!date) throw AppError.badRequest('That date is not valid.');
+
+    const resources = await resourceRepository.list(kind);
+    if (resources.length === 0) return [];
+
+    const names = new Map(resources.map((resource) => [resource.id, resource.name]));
+
+    const dayStart = fromDojoWallClock({ ...date, hour: 0 });
+    const dayEnd = fromDojoWallClock({ ...date, hour: 0, day: date.day + 1 });
+
+    const rows = await resourceRepository.busyRangesFor(
+      resources.map((resource) => resource.id),
+      dayStart.toISOString(),
+      dayEnd.toISOString(),
+    );
+
+    const now = Date.now();
+
+    // The single gate. Everything below reads it; nothing else decides.
+    const maySeeNames = viewer?.isActiveMember === true;
+
+    return rows.map((row) => {
+      const booker = maySeeNames
+        ? (row.profiles?.directory_visible ?? false)
+          ? (row.profiles?.full_name ?? null)
+          : 'A member'
+        : null;
+
+      return {
+        resourceId: row.resource_id,
+        resourceName: names.get(row.resource_id) ?? 'Reservation',
+        startsAt: row.starts_at,
+        endsAt: row.ends_at,
+        window: formatDojoClockRange(row.starts_at, row.ends_at),
+        active: new Date(row.starts_at).getTime() <= now && new Date(row.ends_at).getTime() > now,
+        bookedBy: booker,
+      };
+    });
   },
 
   async listMine(user: AuthenticatedUser): Promise<BookingView[]> {
@@ -347,9 +483,17 @@ export const bookingService = {
   async checkIn(
     user: AuthenticatedUser,
     input: { resourceId?: string | undefined },
-  ): Promise<LiveSessionView> {
+  ): Promise<PresenceChange> {
+    // Re-entering does not open a second session, so nothing changed and there
+    // is no new number to report — the dial the app already holds is correct.
     const existing = await sessionRepository.liveForProfile(user.accessToken, user.id);
-    if (existing) return toLiveSessionView(existing);
+    if (existing) return { session: toLiveSessionView(existing), occupancy: null };
+
+    // A session that expired without a checkout is invisible to the read above
+    // and still holds the unique index slot, so the insert below would fail as
+    // a duplicate and lock the member out of the floor permanently. Closing it
+    // first is what makes checking in possible the day after checking in.
+    await sessionRepository.endExpiredFor(user.accessToken, user.id);
 
     if (input.resourceId) {
       const resource = await resourceRepository.findById(input.resourceId);
@@ -365,7 +509,8 @@ export const bookingService = {
       expiresAt: new Date(Date.now() + CHECKIN_DURATION_MS).toISOString(),
     });
 
-    return toLiveSessionView(row);
+    const occupancy = await resampleOccupancy('check-in');
+    return { session: toLiveSessionView(row), occupancy };
   },
 
   /** Extend the live session by 15 minutes, capped at two hours total. */
@@ -393,12 +538,14 @@ export const bookingService = {
     return toLiveSessionView({ ...session, ...row });
   },
 
-  async endSession(user: AuthenticatedUser): Promise<LiveSessionView> {
+  async endSession(user: AuthenticatedUser): Promise<PresenceChange> {
     const session = await sessionRepository.liveForProfile(user.accessToken, user.id);
     if (!session) throw AppError.notFound('You have no live session.');
 
     const row = await sessionRepository.end(user.accessToken, session.id);
-    return toLiveSessionView({ ...session, ...row });
+
+    const occupancy = await resampleOccupancy('check-out');
+    return { session: toLiveSessionView({ ...session, ...row }), occupancy };
   },
 
   /** Exposed so the client can label a slot grid without guessing the zone. */

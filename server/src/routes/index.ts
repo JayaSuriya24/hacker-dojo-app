@@ -17,6 +17,11 @@ import { uuidParam } from '../validators/common.validators.js';
 import {
   applicationStatusSchema,
   availabilityQuery,
+  createStartupSchema,
+  dayScheduleQuery,
+  reorderStartupsSchema,
+  startupQuery,
+  updateStartupSchema,
   bookTourSchema,
   checkInSchema,
   createBookingSchema,
@@ -31,7 +36,6 @@ import {
   reviewDocumentSchema,
   staffQueueQuery,
   tourStatusSchema,
-  unlockDoorSchema,
   updateNotificationsSchema,
   updateProfileSchema,
   uploadAvatarSchema,
@@ -43,8 +47,9 @@ import { profileController } from '../controllers/profile.controller.js';
 import { eventController } from '../controllers/event.controller.js';
 import { bookingController } from '../controllers/booking.controller.js';
 import { communityController } from '../controllers/community.controller.js';
+import { startupController } from '../controllers/startup.controller.js';
 import { paymentController } from '../controllers/payment.controller.js';
-import { accessController } from '../controllers/access.controller.js';
+import { wifiController } from '../controllers/wifi.controller.js';
 import { documentController } from '../controllers/document.controller.js';
 import { staffController } from '../controllers/staff.controller.js';
 
@@ -95,7 +100,22 @@ apiRouter.post(
   validate({ body: checkInSchema }),
   bookingController.checkIn,
 );
-apiRouter.post('/me/session/extend', requireAuth, mutationLimiter, bookingController.extendSession);
+// Extending is staying, so it is gated exactly like checking in was. Without
+// this a member whose membership lapsed mid-session could hold the floor
+// indefinitely: a check-in on the floor carries no ceiling the way a booth
+// session does, so the extension could be repeated forever on a membership
+// that ended hours ago.
+apiRouter.post(
+  '/me/session/extend',
+  requireAuth,
+  requireActiveMembership,
+  mutationLimiter,
+  bookingController.extendSession,
+);
+// Ending is deliberately NOT gated. Someone whose membership lapsed while they
+// were on the floor still has to be able to check out — refusing would leave
+// them counted in the occupancy dial forever and holding the one-live-session
+// index slot that their next check-in needs.
 apiRouter.post('/me/session/end', requireAuth, mutationLimiter, bookingController.endSession);
 
 // Avatar. Upload runs as the caller so the storage policy still arbitrates.
@@ -132,22 +152,37 @@ apiRouter.delete(
 );
 
 // ---------------------------------------------------------------------------
-// Door access
-//
-// `sensitiveLimiter` rather than `mutationLimiter`: this opens a physical door,
-// and the service keeps a second per-member counter in the audit log besides,
-// because an in-process limiter resets on deploy.
+// Member Wi-Fi. The guest network lives in `/settings` because its password is
+// posted on the wall; this is the per-member credential, so it is gated exactly
+// like the door key and never travels on a route that serves anonymous callers.
 // ---------------------------------------------------------------------------
-apiRouter.get('/me/key', requireAuth, requireActiveMembership, accessController.digitalKey);
+apiRouter.get('/me/wifi', requireAuth, requireActiveMembership, wifiController.credential);
 apiRouter.post(
-  '/me/key/unlock',
+  '/me/wifi/rotate',
   requireAuth,
   requireActiveMembership,
+  // `sensitiveLimiter` for the same reason as the door: this mints a
+  // credential, and an unbounded loop of rotations is a way to spend someone
+  // else's PIN space and lock them off the network.
   sensitiveLimiter,
-  validate({ body: unlockDoorSchema }),
-  accessController.unlock,
+  wifiController.rotate,
 );
-apiRouter.get('/me/key/history', requireAuth, accessController.history);
+
+// ---------------------------------------------------------------------------
+// Door access
+//
+// Deliberately absent. Physical access is handled entirely by the Kisi app:
+// Kisi holds the member's credential, authenticates and authorises them, picks
+// the door, opens it and keeps the access history. This API exposed
+// `/me/key`, `/me/key/unlock` and `/me/key/history` and no longer does — a
+// second authorisation path that cannot actually move the lock is a source of
+// truth that can only drift from the one that can.
+//
+// The `door_credentials` and `door_access_logs` tables are intentionally left
+// in place. They hold the historical record of unlocks made while this API
+// owned the door, and dropping them would destroy that audit trail; nothing
+// writes to them now.
+// ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
 // Membership plans — public: the pricing table is a conversion surface.
@@ -189,6 +224,18 @@ apiRouter.get(
   '/resources',
   validate({ query: listResourcesQuery }),
   bookingController.listResources,
+);
+// Before `/resources/:id/...` so `schedule` is not read as a resource id.
+// Times are public like the two routes around it; the booker's name is added
+// only for an active member — see `bookingService.daySchedule`.
+apiRouter.get(
+  '/resources/schedule',
+  // `optionalAuth`, not `requireAuth`: the times stay public, and the caller's
+  // membership is what decides whether the booker's NAME rides along. A guest
+  // gets a usable answer rather than a 401.
+  optionalAuth,
+  validate({ query: dayScheduleQuery }),
+  bookingController.daySchedule,
 );
 apiRouter.get(
   '/resources/:id/availability',
@@ -236,7 +283,61 @@ apiRouter.get(
   validate({ params: uuidParam }),
   communityController.member,
 );
-apiRouter.get('/startups', communityController.startups);
+/**
+ * The staff gate, shared by every write below.
+ *
+ * Declared here rather than beside the `/staff/*` routes because the startup
+ * writes are the first use and a `const` is not hoisted — leaving it further
+ * down threw `Cannot access 'staffOnly' before initialization` at import time,
+ * taking the whole API down rather than failing one route.
+ *
+ * Two independent gates on every line that spreads it: `requireRole` here, and
+ * `is_staff()` in the RLS policy each query runs under. A routing mistake alone
+ * is not enough to expose anything.
+ */
+const staffOnly = [requireAuth, requireRole('steward', 'admin')] as const;
+
+// ---------------------------------------------------------------------------
+// Startups — a public, editorial list that staff maintain.
+//
+// The read stays open to everyone, signed in or not: it is a recruiting
+// surface, and someone deciding whether to join should be able to see what came
+// out of the place. Every write is `staffOnly`, the same gate the rest of the
+// staff surface uses.
+//
+// `/startups/reorder` is declared BEFORE `/startups/:key` or Express would read
+// "reorder" as a startup key and answer 404.
+// ---------------------------------------------------------------------------
+apiRouter.get('/startups', validate({ query: startupQuery }), startupController.list);
+apiRouter.patch(
+  '/startups/reorder',
+  ...staffOnly,
+  mutationLimiter,
+  validate({ body: reorderStartupsSchema }),
+  startupController.reorder,
+);
+apiRouter.get('/startups/:key', startupController.detail);
+apiRouter.post(
+  '/startups',
+  ...staffOnly,
+  mutationLimiter,
+  validate({ body: createStartupSchema }),
+  startupController.create,
+);
+apiRouter.patch(
+  '/startups/:id',
+  ...staffOnly,
+  mutationLimiter,
+  validate({ params: uuidParam, body: updateStartupSchema }),
+  startupController.update,
+);
+apiRouter.delete(
+  '/startups/:id',
+  ...staffOnly,
+  mutationLimiter,
+  validate({ params: uuidParam }),
+  startupController.remove,
+);
 apiRouter.get('/occupancy', communityController.occupancy);
 
 // ---------------------------------------------------------------------------
@@ -289,7 +390,6 @@ apiRouter.post(
 // the RLS policy each query runs under. A routing mistake alone is not enough
 // to expose anything.
 // ---------------------------------------------------------------------------
-const staffOnly = [requireAuth, requireRole('steward', 'admin')] as const;
 
 apiRouter.get('/staff/dashboard', ...staffOnly, staffController.dashboard);
 apiRouter.get(

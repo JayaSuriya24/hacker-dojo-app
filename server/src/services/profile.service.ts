@@ -1,4 +1,5 @@
 import { profileRepository, type ProfilePatch } from '../repositories/profile.repository.js';
+import { contentRepository } from '../repositories/content.repository.js';
 import { storageRepository } from '../repositories/storage.repository.js';
 import { AppError } from '../utils/errors.js';
 import type { AuthenticatedUser } from '../types/http.js';
@@ -17,10 +18,22 @@ export interface MeView {
   company: string | null;
   currentProject: string | null;
   skills: string[];
+  /** True once the skills prompt has run — answered or skipped. */
+  skillsPrompted: boolean;
   directoryVisible: boolean;
   memberSince: string | null;
   /** Drives every gated surface in the app. */
   isActiveMember: boolean;
+  /**
+   * True once this account has a tour booked or attended.
+   *
+   * The app uses it to stop offering a tour to someone who already has one. The
+   * decision is made here rather than in the client for the usual reason: the
+   * app should not be querying the tours table to work out what to render, and
+   * "counts as having toured" is a rule that may grow (a no-show probably
+   * should not lock someone out of booking again) without an app release.
+   */
+  hasBookedTour: boolean;
   membership: {
     planId: string;
     planName: string;
@@ -38,10 +51,11 @@ const MAX_SKILLS = 8;
 
 export const profileService = {
   async me(user: AuthenticatedUser): Promise<MeView> {
-    const [profile, membership, plans] = await Promise.all([
+    const [profile, membership, plans, hasBookedTour] = await Promise.all([
       profileRepository.findById(user.id),
       profileRepository.membership(user.accessToken, user.id),
       profileRepository.plans(),
+      contentRepository.hasTour(user.accessToken, user.id),
     ]);
 
     if (!profile) throw AppError.notFound('Your profile is missing. Contact a steward.');
@@ -60,9 +74,16 @@ export const profileService = {
       company: profile.company,
       currentProject: profile.current_project,
       skills: profile.skills,
+      /**
+       * Whether the skills prompt has already run. A boolean rather than the
+       * timestamp: the client only needs to know whether to ask, and the date
+       * is staff-facing detail.
+       */
+      skillsPrompted: profile.skills_prompted_at !== null,
       directoryVisible: profile.directory_visible,
       memberSince: profile.member_since,
       isActiveMember: user.isActiveMember,
+      hasBookedTour,
       membership: membership
         ? {
             planId: membership.plan_id,
@@ -85,12 +106,30 @@ export const profileService = {
    * three independent layers, because privilege escalation is the failure that
    * matters most on this endpoint.
    */
-  async update(user: AuthenticatedUser, patch: ProfilePatch): Promise<MeView> {
+  async update(
+    user: AuthenticatedUser,
+    patch: ProfilePatch & { skills_prompted?: true },
+  ): Promise<MeView> {
     if (patch.skills && patch.skills.length > MAX_SKILLS) {
       throw AppError.badRequest(`Pick up to ${MAX_SKILLS} skills for your card.`);
     }
 
-    await profileRepository.update(user.accessToken, user.id, patch);
+    const { skills_prompted, ...fields } = patch;
+
+    /*
+     * The client sends a flag; the server decides the time. Taking a timestamp
+     * from the caller would let a clock-skewed device write a date in the past
+     * or the future, and there is nothing useful it could say that `now()`
+     * does not.
+     *
+     * Only ever set, never cleared — see the validator. Once a member has been
+     * asked, they have been asked.
+     */
+    const write: ProfilePatch = skills_prompted
+      ? { ...fields, skills_prompted_at: new Date().toISOString() }
+      : fields;
+
+    await profileRepository.update(user.accessToken, user.id, write);
     return this.me(user);
   },
 
@@ -134,6 +173,7 @@ export const profileService = {
       isAddon: plan.is_addon,
       isPopular: plan.is_popular,
       requiresProof: plan.requires_proof,
+      benefits: plan.benefits,
       /** Annual saving in cents, or null when the plan has no annual rate. */
       annualSavingCents:
         plan.price_annual_cents !== null
