@@ -26,7 +26,7 @@ void verifyStartupDependencies().then((report) => {
   if (!report.ok) {
     logger.fatal({ failures: report.failures }, 'Startup verification failed');
     if (env.NODE_ENV === 'production') {
-      shutdown('startupVerification');
+      shutdown('startupVerification', 1);
     }
     return;
   }
@@ -43,14 +43,27 @@ const stopScheduler = schedulerService.start();
  * On SIGTERM the orchestrator has already stopped routing new traffic, so the
  * job is to let in-flight requests finish. A hard exit here would cut a member
  * off mid-checkout, after Stripe was called but before the response landed.
+ *
+ * `exitCode` is what the process reports once the drain completes, and it is
+ * the caller's outcome rather than the drain's: draining cleanly after a fatal
+ * fault is still a fatal fault. It used to be hardcoded to 0, so a production
+ * container that could not reach Supabase or Stripe — or that hit an unhandled
+ * rejection — drained politely and exited SUCCESSFULLY. Nothing keyed on exit
+ * status could tell that deployment apart from a deliberate stop, and a
+ * `restart: on-failure` policy would not restart it.
+ *
+ * Defaulted to 0 because the signal paths below are the ordinary case: SIGTERM
+ * and SIGINT are someone asking the process to stop, and it did.
  */
-function shutdown(signal: string): void {
+function shutdown(signal: string, exitCode = 0): void {
   logger.info({ signal }, 'Shutting down');
 
   // Stop scheduling new background work before draining, so nothing starts a
   // write while connections are closing.
   stopScheduler();
 
+  // Always 1, regardless of `exitCode`: connections that would not drain in
+  // ten seconds means this process is leaving in a state nobody asked for.
   const forceExit = setTimeout(() => {
     logger.error('Forcing exit — connections did not drain in time');
     process.exit(1);
@@ -63,7 +76,7 @@ function shutdown(signal: string): void {
       process.exit(1);
     }
     logger.info('Closed cleanly');
-    process.exit(0);
+    process.exit(exitCode);
   });
 }
 
@@ -74,10 +87,10 @@ process.on('SIGINT', () => shutdown('SIGINT'));
 // let the orchestrator restart into a known one.
 process.on('unhandledRejection', (reason) => {
   logger.fatal({ err: reason }, 'Unhandled promise rejection');
-  shutdown('unhandledRejection');
+  shutdown('unhandledRejection', 1);
 });
 
 process.on('uncaughtException', (error) => {
   logger.fatal({ err: error }, 'Uncaught exception');
-  shutdown('uncaughtException');
+  shutdown('uncaughtException', 1);
 });
