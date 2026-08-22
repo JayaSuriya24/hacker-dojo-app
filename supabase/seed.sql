@@ -20,27 +20,102 @@ on conflict (id) do nothing;
 -- Plans
 -- ---------------------------------------------------------------------------
 --
--- `stripe_price_*` are the Price ids memberships subscribe to. They are the one
--- part of this seed that CANNOT be invented: create the Prices in your own
--- Stripe account and paste the ids here (or update the rows afterwards).
+-- These rows must agree with 20260813000400_real_membership_plans.sql, which is
+-- where the current product definition is written down and explained.
 --
--- A plan with no Price id is refused at checkout rather than silently falling
--- back to a one-off charge — that fallback is exactly why memberships used to
--- never renew.
+-- Why they have to be restated here at all: `supabase db reset` runs the
+-- migrations and THEN this file. That migration states four of the five plans
+-- as `update … where id = '<plan>'`, and on a fresh database the table is empty
+-- when it runs, so all four UPDATEs match zero rows and only `hive` — the one
+-- written as an INSERT — survives. This file then supplied the values the
+-- migration had just corrected, so a reset produced the OLD product: Standard
+-- and Student carrying annual prices that do not exist, a Veteran plan that is
+-- not offered still active and purchasable, and Dedicated Desk as a $225/mo
+-- add-on rather than the $325/mo membership it is.
+--
+-- Stated as the current truth instead, so a fresh database and a migrated one
+-- describe the same four plans. `on conflict (id) do nothing` keeps `hive`
+-- exactly as the migration inserted it and makes re-running this file a no-op
+-- rather than a second copy of anything.
+--
+-- `veteran` is present but INACTIVE, which is what the migration leaves behind:
+-- `memberships.plan_id` references this table, so the row has to exist for the
+-- history of anyone who ever held it, and `profileRepository.plans()` filters
+-- on `active` so it is never served or purchasable. Its annual price goes with
+-- the others — nothing here quotes an annual rate, because none is offered.
+--
+-- `stripe_price_*` stay null. They are the one part of this seed that CANNOT be
+-- invented: create the Prices in your own Stripe account and paste the ids in
+-- (or update the rows afterwards). A plan with no Price id is refused at
+-- checkout rather than silently falling back to a one-off charge — that
+-- fallback is exactly why memberships used to never renew.
 --
 insert into public.plans
   (id, name, description, price_monthly_cents, price_annual_cents,
    stripe_price_monthly, stripe_price_annual,
-   is_addon, is_popular, requires_proof, sort_order)
+   is_addon, is_popular, requires_proof, sort_order, active, benefits)
 values
-  ('standard', 'Standard', 'Month to month. Full access, 24/7.', 15000, 135000,
-   null, null, false, true,  false, 1),
-  ('student',  'Student',  'Current student ID verification required.', 7500, 67500,
-   null, null, false, false, true,  2),
-  ('veteran',  'Veteran',  'Service verification (DD-214) required.', 13500, 121500,
-   null, null, false, false, true,  3),
-  ('desk',     'Dedicated Desk', 'Add-on to any plan. Your own desk, monitor and locker.', 22500, null,
-   null, null, true, false, false, 4)
+  ('student', 'Student', '', 7500, null,
+   null, null, false, false, true, 1, true,
+   array[
+     '24/7 Access',
+     '1GBps symmetrical Wifi',
+     'Attended most events free',
+     'Discounted event hosting fees',
+     'Maker Space access',
+     '6 hours a week Conference room reservation',
+     'Plenty of open space seating',
+     'Proof of full-time registration required'
+   ]),
+
+  ('standard', 'Standard', '', 15000, null,
+   null, null, false, true, false, 2, true,
+   array[
+     '24/7 Access',
+     '1GBps symmetrical Wifi',
+     'Attended most events free',
+     'Discounted event hosting fees',
+     'Maker Space access',
+     '6 hours a week Conference room reservation',
+     'Plenty of open space seating'
+   ]),
+
+  -- `hive` is inserted by 20260813000400 and is already present by the time
+  -- this runs. Restated so this file describes the whole product rather than
+  -- the part that happened to be missing; the conflict clause leaves it alone.
+  ('hive', 'Hive',
+   'Please check availability of Hive desks before reserving. Dedicated Desk (Stand/Sit) in a semi-private room.',
+   37500, null,
+   null, null, false, false, false, 3, true,
+   array[
+     '24/7 Access',
+     '1GBps Wifi',
+     'Attend most events free',
+     'Discounted event hosting',
+     'Maker Space access',
+     'Electronics Lab',
+     '6 hours a week Conference room reservation',
+     'Mailbox included'
+   ]),
+
+  ('desk', 'Dedicated Desk',
+   'We will be adding additional Dedicated Desk options soon — please contact us for details!',
+   32500, null,
+   null, null, false, false, false, 4, true,
+   array[
+     'Dedicated Desk (Stand/Sit)',
+     '24/7 Access',
+     '1GBps Wifi',
+     'Attend most events free',
+     'Discounted event hosting fees',
+     'Maker Space access',
+     'Electronics Lab',
+     '6 hours a week Conference room reservation',
+     'Mailbox included'
+   ]),
+
+  ('veteran', 'Veteran', 'Service verification (DD-214) required.', 13500, null,
+   null, null, false, false, true, 5, false, '{}'::text[])
 on conflict (id) do nothing;
 
 -- ---------------------------------------------------------------------------
