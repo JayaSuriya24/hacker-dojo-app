@@ -2,8 +2,9 @@ import { env } from '../config/env.js';
 import { logger } from '../config/logger.js';
 import { occupancyRepository } from '../repositories/staff.repository.js';
 import { eventSeriesRepository } from '../repositories/eventSeries.repository.js';
+import { eventRepository } from '../repositories/event.repository.js';
 import { notificationService } from './notification.service.js';
-import { toDojoWallClock } from '../utils/time.js';
+import { dojoWeekWindow, toDojoWallClock } from '../utils/time.js';
 
 /**
  * Background work.
@@ -99,9 +100,25 @@ export const schedulerService = {
     if (weekday !== DIGEST_WEEKDAY || wall.hour !== DIGEST_HOUR) return false;
 
     const weekKey = isoWeekKey(now);
-    const report = await notificationService.sendWeeklyDigest({ weekKey, eventCount: 0 });
 
-    logger.info({ weekKey, ...report }, 'Weekly digest dispatched');
+    /*
+     * The number the digest quotes.
+     *
+     * This was a hardcoded `0`, so every digest ever sent said "A quiet week on
+     * the calendar — the floor is all yours", including weeks with a full
+     * calendar. `sendWeeklyDigest` has always had the plural branch; nothing
+     * could reach it.
+     *
+     * The window is the same ISO week `weekKey` names — Monday 00:00 to the
+     * following Monday 00:00 in the Dojo's zone — so the message and its dedupe
+     * key describe the same seven days.
+     */
+    const week = dojoWeekWindow(now);
+    const eventCount = await eventRepository.countPublishedBetween(week.startsAt, week.endsAt);
+
+    const report = await notificationService.sendWeeklyDigest({ weekKey, eventCount });
+
+    logger.info({ weekKey, eventCount, ...report }, 'Weekly digest dispatched');
     return true;
   },
 

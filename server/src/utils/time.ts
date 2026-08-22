@@ -193,3 +193,49 @@ export function dojoToday(now: Date = new Date()): string {
   const wall = toDojoWallClock(now);
   return `${wall.year}-${String(wall.month).padStart(2, '0')}-${String(wall.day).padStart(2, '0')}`;
 }
+
+/**
+ * The ISO week containing an instant, as absolute bounds.
+ *
+ * Monday 00:00 in the Dojo's zone through the following Monday 00:00 — a
+ * half-open range, so an event at exactly midnight on the closing Monday
+ * belongs to the NEXT week rather than being counted twice.
+ *
+ * Monday-start is not a new convention: `isoWeekKey` already keys the digest's
+ * dedupe on the ISO week, and the digest fires Monday morning. This makes the
+ * window it reports on the same week its key names.
+ *
+ * Both edges go through `fromDojoWallClock`, which resolves the offset that
+ * actually applied on that date — so the week containing a DST transition is
+ * 167 or 169 hours long, exactly as the wall clock says it should be, rather
+ * than a naive 168.
+ */
+export function dojoWeekWindow(instant: Date = new Date()): {
+  startsAt: string;
+  endsAt: string;
+} {
+  const wall = toDojoWallClock(instant);
+
+  // `getUTCDay` on a UTC-constructed date reads the weekday of the wall-clock
+  // date itself, free of the local machine's zone. 0 = Sunday … 6 = Saturday.
+  const weekday = new Date(Date.UTC(wall.year, wall.month - 1, wall.day)).getUTCDay();
+  // Days back to Monday; Sunday (0) is the END of the ISO week, so it goes back 6.
+  const sinceMonday = (weekday + 6) % 7;
+
+  // `Date.UTC` normalises day overflow and underflow, so month and year
+  // boundaries need no special case.
+  const start = fromDojoWallClock({
+    year: wall.year,
+    month: wall.month,
+    day: wall.day - sinceMonday,
+    hour: 0,
+  });
+  const end = fromDojoWallClock({
+    year: wall.year,
+    month: wall.month,
+    day: wall.day - sinceMonday + 7,
+    hour: 0,
+  });
+
+  return { startsAt: start.toISOString(), endsAt: end.toISOString() };
+}
