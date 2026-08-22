@@ -1,5 +1,6 @@
 import type { Response } from 'express';
 import { profileService } from '../services/profile.service.js';
+import { accountService } from '../services/account.service.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import type { AuthenticatedRequest } from '../types/http.js';
 
@@ -30,5 +31,18 @@ export const profileController = {
 
   plans: asyncHandler(async (_req, res: Response) => {
     res.json({ data: await profileService.plans() });
+  }),
+
+  /**
+   * Delete the caller's own account.
+   *
+   * `req.context.user` is the ONLY input — set by `requireAuth` from the
+   * verified bearer token. Nothing is read from the body or the path, so there
+   * is no id for a caller to substitute for someone else's.
+   */
+  deleteAccount: asyncHandler<AuthenticatedRequest>(async (req, res: Response) => {
+    const result = await accountService.deleteOwnAccount(req.context.user);
+    res.set('Cache-Control', 'no-store');
+    res.json({ data: result });
   }),
 };

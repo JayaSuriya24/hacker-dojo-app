@@ -17,6 +17,7 @@ import {
   Toggle,
 } from '~/components/ui';
 import {
+  useDeleteAccount,
   useMe,
   useNotificationPreferences,
   useUpdateNotificationPreferences,
@@ -58,6 +59,8 @@ export default function SettingsScreen() {
 
   const [signingOut, setSigningOut] = useState(false);
   const [photoError, setPhotoError] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const deleteAccount = useDeleteAccount();
 
   const avatar = useAvatarUpload();
   const removeAvatar = useDeleteAvatar();
@@ -90,6 +93,65 @@ export default function SettingsScreen() {
       setSigningOut(false);
       router.replace('/(auth)/sign-in');
     });
+  };
+
+  /**
+   * Delete the account, behind two confirmations.
+   *
+   * Two rather than one because `confirm` is a yes/no primitive on both targets
+   * — there is no "type DELETE to continue" affordance available without
+   * building a dialog — and this is irreversible, cancels a subscription, and
+   * sits three rows below a sign-out button people tap often. The first screen
+   * says what will happen; the second is the point of no return.
+   *
+   * Deliberately NOT gated behind a password: this account may have been
+   * created with Sign in with Apple or Google and have no password to ask for.
+   * The live Supabase session plus explicit double confirmation is the check.
+   */
+  const confirmDeleteAccount = async () => {
+    setDeleteError(null);
+
+    const understood = await confirm({
+      title: 'Delete your account?',
+      message:
+        'This permanently deletes your profile, bookings, RSVPs, uploaded documents and Wi-Fi PIN. ' +
+        'Any active membership is cancelled in Stripe. This cannot be undone.',
+      confirmLabel: 'Continue',
+      cancelLabel: 'Keep my account',
+      destructive: true,
+    });
+    if (!understood) return;
+
+    const certain = await confirm({
+      title: 'This is permanent',
+      message: 'Your account and your data will be deleted right now. There is no way back.',
+      confirmLabel: 'Delete my account',
+      cancelLabel: 'Cancel',
+      destructive: true,
+    });
+    if (!certain) return;
+
+    try {
+      const result = await deleteAccount.mutateAsync();
+
+      // The account is gone either way, but an object left behind is a support
+      // case rather than a clean exit, so it is not reported as success.
+      if (result.storageFailures.length > 0) {
+        await confirm({
+          title: 'Account deleted',
+          message:
+            'Your account is gone, but one or more uploaded files could not be removed. ' +
+            'Email staff@hackerdojo.org and we will clear them.',
+          confirmLabel: 'Got it',
+        });
+      }
+
+      router.replace('/(auth)/sign-in');
+    } catch (error) {
+      // Nothing was deleted — the server aborts before touching anything if it
+      // cannot cancel billing first, so the member still has their account.
+      setDeleteError(userMessage(error));
+    }
   };
 
   const toggleNotification = async (
@@ -403,6 +465,41 @@ export default function SettingsScreen() {
                   Sign out
                 </Button>
               </YStack>
+            </Section>
+
+            {/* ---- Delete account -----------------------------------------
+                Its own section, below sign-out and visually separated: App
+                Store guideline 5.1.1(v) requires this to be findable in the
+                app, and burying it inside Account next to "Privacy policy"
+                would be both a rejection risk and easy to hit by accident. */}
+            <Section title="Delete account">
+              <Card padded="tight" gap={space[2]}>
+                <Text variant="small" tone="muted">
+                  Permanently deletes your profile, bookings, RSVPs, uploaded documents and Wi-Fi
+                  PIN, and cancels any active membership. This cannot be undone.
+                </Text>
+
+                {deleteError ? (
+                  <View aria-live="assertive" role="alert">
+                    <Text variant="small" tone="error">
+                      {deleteError}
+                    </Text>
+                  </View>
+                ) : null}
+
+                <YStack alignSelf="flex-start" marginTop={space[2]}>
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    loading={deleteAccount.isPending}
+                    disabled={deleteAccount.isPending}
+                    onPress={() => void confirmDeleteAccount()}
+                    accessibilityHint="Permanently deletes your Hacker Dojo account"
+                  >
+                    Delete my account
+                  </Button>
+                </YStack>
+              </Card>
             </Section>
 
             <YStack marginTop={space[8]} gap={space[1]} alignItems="center">

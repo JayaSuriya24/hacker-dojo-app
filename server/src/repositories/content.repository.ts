@@ -111,6 +111,42 @@ export const contentRepository = {
   },
 
   /**
+   * Remove a member's own tours, as part of deleting their account.
+   *
+   * This is not tidiness — without it the account cannot be deleted at all.
+   * `tours.profile_id` is `on delete set null`, and `tours` also carries
+   * `check (profile_id is not null or guest_email is not null)`. Cascading the
+   * profile away therefore tries to write a row with neither, Postgres refuses
+   * the UPDATE, and the whole `auth.users` delete fails with nothing more
+   * informative than "Database error deleting user":
+   *
+   *   ERROR: new row for relation "tours" violates check constraint
+   *          "tours_has_contact"
+   *   CONTEXT: UPDATE ONLY "public"."tours" SET "profile_id" = NULL ...
+   *
+   * Deleting rather than de-identifying is the deliberate choice. The only way
+   * to keep the row legal is to copy the member's email into `guest_email`,
+   * which would retain personal data through the exact request that asked for
+   * it to be erased. A tour is the member's own booking, so leaving cancels it.
+   *
+   * Service role, scoped to one profile id. There is no member DELETE policy on
+   * `tours` — only select/insert for the owner and update for staff — so the
+   * caller's own token cannot do this, and adding a policy to allow it would
+   * widen what every member may do in order to serve one flow that already runs
+   * server side.
+   */
+  async deleteToursForProfile(profileId: string): Promise<number> {
+    const { data, error } = await adminClient
+      .from('tours')
+      .delete()
+      .eq('profile_id', profileId)
+      .select('id');
+
+    if (error) throw new Error(error.message);
+    return data?.length ?? 0;
+  },
+
+  /**
    * Tours accept anonymous bookings — a prospective member has no account yet,
    * and requiring one before they can visit is exactly backwards.
    */

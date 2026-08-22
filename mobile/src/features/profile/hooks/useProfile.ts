@@ -3,6 +3,7 @@ import { profileApi } from '../api/profile.api';
 import { queryKeys } from '~/services/queryKeys';
 import { QUERY_STALE_TIME } from '~/constants/config';
 import { useAuth } from '~/providers/AuthProvider';
+import { authService } from '~/features/auth/services/auth.service';
 import type { Me, NotificationPreferences } from '~/types/domain';
 
 /**
@@ -57,6 +58,33 @@ export function useUpdateProfile() {
       queryClient.setQueryData(queryKeys.me.profile(), updated);
       // The member's own card in the directory is now stale.
       void queryClient.invalidateQueries({ queryKey: queryKeys.community.all() });
+    },
+  });
+}
+
+/**
+ * Delete the signed-in member's account, permanently.
+ *
+ * The local teardown is part of the operation, not an afterthought. Once the
+ * server has deleted the auth user their access token is dead — `requireAuth`
+ * verifies every request against Supabase rather than decoding the JWT locally,
+ * so the very next call 401s — but the DEVICE still holds a session in the
+ * Keychain and a cache full of the deleted member's data. Navigating away
+ * without clearing both would leave the app rendering a ghost account until
+ * something happened to fail.
+ *
+ * `signOut` first (drops the persisted session and fires `SIGNED_OUT`, which
+ * routes the guard), then an explicit `clear()` so nothing survives even if the
+ * auth event is missed.
+ */
+export function useDeleteAccount() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: profileApi.deleteAccount,
+    onSuccess: async () => {
+      await authService.signOut();
+      queryClient.clear();
     },
   });
 }

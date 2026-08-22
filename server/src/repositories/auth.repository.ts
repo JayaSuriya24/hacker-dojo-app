@@ -25,4 +25,30 @@ export const authRepository = {
 
     return { id: data.user.id, email: data.user.email ?? '' };
   },
+
+  /**
+   * Delete an auth user, and with it everything hanging off their profile.
+   *
+   * The service role is unavoidable here: there is no non-privileged way to
+   * remove a row from `auth.users`, and it is the ONE operation in the deletion
+   * flow that needs it — the storage cleanup runs as the member themselves.
+   *
+   * `profiles.id` references `auth.users (id) on delete cascade`, and the
+   * member's own rows cascade from `profiles`, so this single call is what
+   * removes bookings, RSVPs, documents, sessions, certifications, the Wi-Fi
+   * credential and the notification preferences. Payments, donations, tours and
+   * hosted events are `on delete set null` instead: they are financial and
+   * calendar records that outlive the account, de-identified rather than erased.
+   *
+   * The caller's id is taken from their verified token, never from the request
+   * body — see `accountService.deleteOwnAccount`.
+   */
+  async deleteUser(id: string): Promise<void> {
+    const { error } = await adminClient.auth.admin.deleteUser(id);
+
+    if (error) {
+      logger.error({ err: error, profileId: id }, 'Failed to delete auth user');
+      throw new Error(error.message);
+    }
+  },
 };

@@ -87,6 +87,19 @@ apiRouter.patch(
   validate({ body: updateNotificationsSchema }),
   profileController.updateNotifications,
 );
+/**
+ * Delete your own account. Required in-app by App Store guideline 5.1.1(v).
+ *
+ * Note what this route does NOT take: no id in the path, no body at all. The
+ * account deleted is the one the bearer token authenticates, which is the only
+ * shape that makes "one member deletes another" unexpressible rather than
+ * merely checked for.
+ *
+ * `sensitiveLimiter` rather than `mutationLimiter`: this is irreversible and
+ * cancels a subscription on the way through, so it is gated like the other
+ * actions with a consequence outside the database.
+ */
+apiRouter.delete('/me', requireAuth, sensitiveLimiter, profileController.deleteAccount);
 apiRouter.get('/me/bookings', requireAuth, bookingController.listMine);
 
 // Presence. Check-in is what populates `sessions`, which is what drives the

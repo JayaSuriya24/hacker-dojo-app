@@ -1,5 +1,5 @@
 import { api } from '~/services/api/client';
-import type { Me, NotificationPreferences, Plan } from '~/types/domain';
+import type { AccountDeletionResult, Me, NotificationPreferences, Plan } from '~/types/domain';
 
 /**
  * Profile endpoints. This layer is URLs and types only — no caching, no
@@ -29,6 +29,15 @@ export const profileApi = {
     weeklyDigest?: boolean;
     pushToken?: string;
   }) => api.patch<NotificationPreferences>('/me/notifications', patch),
+
+  /**
+   * Delete the signed-in member's own account, permanently.
+   *
+   * No arguments by design: the server deletes whoever the bearer token
+   * authenticates, so there is no id for this client — or a tampered copy of
+   * it — to point somewhere else.
+   */
+  deleteAccount: () => api.delete<AccountDeletionResult>('/me'),
 
   // Public: the pricing table renders before anyone signs in.
   plans: () => api.get<Plan[]>('/plans', { anonymous: true }),
