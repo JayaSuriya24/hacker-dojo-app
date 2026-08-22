@@ -31,6 +31,12 @@ export default function CheckoutSheet() {
 
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
+  /**
+   * True when this was a plan change on an existing subscription rather than a
+   * new membership. The confirmation differs: an existing member has already
+   * had their induction and is not collecting a keycard.
+   */
+  const [switched, setSwitched] = useState(false);
 
   const plan = plans.data?.find((entry) => entry.id === planId);
   const billingPeriod: BillingPeriod = period === 'year' ? 'year' : 'month';
@@ -46,7 +52,10 @@ export default function CheckoutSheet() {
 
     try {
       const result = await checkout.mutateAsync({ planId: plan.id, period: billingPeriod });
-      if (!result.cancelled) setDone(true);
+      if (!result.cancelled) {
+        setSwitched(result.outcome !== 'checkout');
+        setDone(true);
+      }
     } catch (caught) {
       setError(userMessage(caught));
     }
@@ -54,11 +63,17 @@ export default function CheckoutSheet() {
 
   if (done) {
     return (
-      <SheetScreen eyebrow="Welcome" title="You're in">
+      <SheetScreen
+        eyebrow={switched ? 'Updated' : 'Welcome'}
+        title={switched ? 'Plan changed' : "You're in"}
+      >
         <YStack gap={space[5]} alignItems="center" paddingVertical={space[8]}>
           <Text variant="small" tone="muted" center>
-            Your {plan?.name} plan is active. Pick up your keycard at the front desk on your first
-            visit — a steward will walk you through the floor and the labs.
+            {switched
+              ? `You're on ${plan?.name} now. The difference is worked out against the rest of this ` +
+                `billing period and appears on your next invoice — nothing was charged just now.`
+              : `Your ${plan?.name} plan is active. Pick up your keycard at the front desk on your ` +
+                `first visit — a steward will walk you through the floor and the labs.`}
           </Text>
           <YStack alignSelf="stretch" marginTop={space[4]}>
             <Button

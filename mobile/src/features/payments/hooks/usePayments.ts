@@ -10,7 +10,7 @@ import { logger } from '~/services/logger';
 import { usePalette, useResolvedScheme } from '~/providers/ThemeProvider';
 import { radius } from '~/theme/tokens';
 import type { Palette } from '~/theme/tokens';
-import type { BillingPeriod, BillingPortalSession, PaymentSheetParams } from '~/types/domain';
+import type { BillingPeriod, BillingPortalSession, MembershipIntentResult } from '~/types/domain';
 
 /**
  * Payments.
@@ -57,7 +57,7 @@ function sheetAppearance(palette: Palette, scheme: 'light' | 'dark') {
 
 const paymentsApi = {
   membershipIntent: (input: { planId: string; period: BillingPeriod; idempotencyKey: string }) =>
-    api.post<PaymentSheetParams>('/payments/membership-intent', input, { retry: true }),
+    api.post<MembershipIntentResult>('/payments/membership-intent', input, { retry: true }),
 
   donationIntent: (input: { amountCents: number; idempotencyKey: string; receiptEmail?: string }) =>
     api.post<{ paymentIntentClientSecret: string; paymentId: string }>(
@@ -81,6 +81,18 @@ export function useMembershipCheckout() {
     mutationFn: async ({ planId, period }: { planId: string; period: BillingPeriod }) => {
       const idempotencyKey = Crypto.randomUUID();
       const params = await paymentsApi.membershipIntent({ planId, period, idempotencyKey });
+
+      /*
+       * A member who already subscribes had their existing subscription
+       * re-priced rather than a second one created, so there is nothing to
+       * confirm and no sheet to open. Returning here is what keeps the flow
+       * honest — the previous code would have handed `initPaymentSheet` an
+       * empty client secret and reported "we could not open the payment sheet"
+       * for a change that had in fact already succeeded.
+       */
+      if (params.outcome !== 'checkout') {
+        return { cancelled: false as const, outcome: params.outcome };
+      }
 
       const { error: initError } = await initPaymentSheet({
         merchantDisplayName: 'Hacker Dojo',
@@ -125,18 +137,23 @@ export function useMembershipCheckout() {
         });
       }
 
-      return { cancelled: false as const, paymentId: params.paymentId };
+      return {
+        cancelled: false as const,
+        outcome: 'checkout' as const,
+        paymentId: params.paymentId,
+      };
     },
 
     onSuccess: (result) => {
       if (result.cancelled) return;
 
       /**
-       * The membership is activated by the `payment_intent.succeeded` webhook,
-       * which lands a moment after the sheet closes. Invalidating immediately
-       * would usually read the profile back as still-a-guest, so the refetch
-       * waits briefly. `isActiveMember` on the refetched profile is what
-       * actually flips the gated surfaces — not this callback.
+       * The membership is moved by a `customer.subscription.*` webhook — the
+       * first one for a new subscription, the update for a plan change — which
+       * lands a moment after this resolves. Invalidating immediately would
+       * usually read the profile back on the old plan, so the refetch waits
+       * briefly. `isActiveMember` and `membership.planId` on the refetched
+       * profile are what actually flip the gated surfaces, not this callback.
        */
       setTimeout(() => {
         void queryClient.invalidateQueries({ queryKey: queryKeys.me.all() });
