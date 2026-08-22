@@ -183,6 +183,13 @@ begin
 
   -- `current_role_of` is the deliberate partial: closed to anon, retained for
   -- authenticated because `profiles_update_self` cannot be evaluated without it.
+  --
+  -- Both checks below are still correct AT THIS POINT IN THE CHAIN and must not
+  -- be flipped — 20260822000000 is what removes the authenticated grant, and it
+  -- runs after this file. That migration repoints the policy at the
+  -- zero-argument `current_role_of_self()` first, which is what makes the
+  -- revoke safe. The residual exposure described at the top of this file is
+  -- closed there, not here.
   if has_function_privilege('anon', 'public.current_role_of(uuid)', 'EXECUTE') then
     raise exception 'anon can still execute current_role_of';
   end if;
