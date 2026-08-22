@@ -60,6 +60,36 @@ const queryConfig: QueryClientConfig = {
   },
 };
 
+/**
+ * The query scopes allowed onto disk.
+ *
+ * AsyncStorage is not encrypted, so this is an allowlist and the default is
+ * NO. A scope added to `queryKeys.ts` later is private until someone decides
+ * otherwise, rather than public until someone remembers — which is how the
+ * Wi-Fi PIN ended up here.
+ *
+ * What is on the list is what the offline story actually needs: the events
+ * list and the space's own facts, readable in the basement lab with no signal.
+ * None of it is about a particular member.
+ */
+const PERSISTED_SCOPES: ReadonlySet<string> = new Set(['dojo', 'events', 'resources']);
+
+/**
+ * Personal sub-keys inside an otherwise persistable scope.
+ *
+ * `['resources','schedule']` carries who has the room — a real member name for
+ * anyone who has not turned directory visibility off.
+ */
+const BLOCKED_SUBKEYS: ReadonlySet<string> = new Set(['resources:schedule']);
+
+/**
+ * Impersonal sub-keys inside an otherwise private scope.
+ *
+ * The startup directory is public content that happens to live under
+ * `community`, next to the member directory that must never be written down.
+ */
+const PERSISTED_SUBKEYS: ReadonlySet<string> = new Set(['community:startups', 'community:startup']);
+
 const persister = createAsyncStoragePersister({
   storage: AsyncStorage,
   key: 'hackerdojo.query-cache',
@@ -99,14 +129,18 @@ export function QueryProvider({ children }: { children: ReactNode }) {
             // and shown before the refetch had a chance to succeed.
             if (query.state.status !== 'success') return false;
 
-            // The member directory and profile are personal data. Keeping them
-            // in an unencrypted store past the session is not worth the
-            // marginal offline benefit.
             const [scope, sub] = query.queryKey as [string, string?];
-            if (scope === 'community' && sub === 'directory') return false;
-            if (scope === 'me') return false;
+            if (typeof scope !== 'string') return false;
 
-            return true;
+            const subKey = sub === undefined ? null : `${scope}:${sub}`;
+
+            if (subKey !== null && BLOCKED_SUBKEYS.has(subKey)) return false;
+            if (PERSISTED_SCOPES.has(scope)) return true;
+            if (subKey !== null && PERSISTED_SUBKEYS.has(subKey)) return true;
+
+            // Everything else — me, access, uploads, staff, and the member
+            // directory — stays in memory only.
+            return false;
           },
         },
       }}
