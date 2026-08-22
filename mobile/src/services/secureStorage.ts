@@ -23,6 +23,13 @@ import { logger } from './logger';
 const CHUNK_SIZE = 1800;
 const isWeb = Platform.OS === 'web';
 
+// The downgrade the header promises is announced here, once, rather than on
+// every read: a value stored on web is NOT encrypted, and a silent fallback
+// would let that pass for Keychain storage.
+if (isWeb) {
+  logger.warn('SecureStore has no web implementation — falling back to unencrypted AsyncStorage.');
+}
+
 const options: SecureStore.SecureStoreOptions = {
   // Available after the first unlock, so a background refresh can still read
   // the session, but not while the device has never been unlocked since boot.
