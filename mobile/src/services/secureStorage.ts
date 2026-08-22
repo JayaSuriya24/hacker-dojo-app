@@ -67,12 +67,11 @@ export const secureStorage = {
       const head = await getRaw(key);
       if (head === null) return null;
 
-      // A chunked value stores its part count under the base key.
-      const chunkCount = Number(head);
-      if (!Number.isInteger(chunkCount) || chunkCount <= 0 || !head.startsWith('__chunks__')) {
-        return head.startsWith('__chunks__') ? null : head;
-      }
-      return head;
+      // A chunked value stores the marker under the base key and the parts
+      // beside it. Reassembling them is the Supabase adapter's job, so this
+      // plain reader reports a chunked value as absent rather than handing
+      // back a marker that is not the stored value.
+      return head.startsWith('__chunks__') ? null : head;
     } catch (error) {
       logger.warn('Secure storage read failed', { key, error });
       return null;
@@ -119,8 +118,8 @@ export const secureStorage = {
 
 /**
  * The adapter shape Supabase expects. Reassembles chunked values on read,
- * which the plain `secureStorage.getItem` above deliberately does not do
- * (it returns the marker so callers can tell the difference).
+ * which the plain `secureStorage.getItem` above deliberately does not do —
+ * it reports them as absent instead.
  */
 export const supabaseSecureStorageAdapter = {
   async getItem(key: string): Promise<string | null> {
