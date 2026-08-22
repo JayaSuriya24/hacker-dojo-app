@@ -13,7 +13,9 @@
     // hoisted to the root. Expo's own globals (`__DEV__`, the asset modules)
     // come from `expo-env.d.ts` via a triple-slash reference, which this does
     // not affect.
-    "types": ["jest"],
+    // `node` is here for `app.config.ts` and the test that asserts on it —
+    // both run in Node, not on a device.
+    "types": ["jest", "node"],
     "paths": {
       "~/*": ["./src/*"]
     }

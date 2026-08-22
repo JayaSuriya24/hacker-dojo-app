@@ -4,6 +4,7 @@ import { notificationRepository } from '../repositories/notification.repository.
 import { emailService, isEmailConfigured } from './email.service.js';
 import { formatDojoRange } from '../utils/time.js';
 import type { PushTargetRow } from '../types/database.js';
+import { NOTIFICATION_ROUTES, routeTo, type NotificationData } from '../types/notifications.js';
 
 /**
  * Push notifications.
@@ -39,8 +40,11 @@ export interface PushMessage {
   channel: NotificationChannel;
   /** Stable per logical notification, e.g. `booking-reminder:<id>`. */
   dedupeKey: string;
-  /** Routed by `useNotificationSetup` when the member taps the banner. */
-  data?: Record<string, string>;
+  /**
+   * Where a tap goes. See `types/notifications.ts` — the field is `href`, and
+   * the closed type is what stops it drifting back to `route`.
+   */
+  data?: NotificationData;
 }
 
 export interface SendReport {
@@ -101,6 +105,23 @@ function chunk<T>(items: T[], size: number): T[][] {
   }
   return chunks;
 }
+
+/**
+ * Fold one page's outcome into the running total.
+ *
+ * The audience is processed a page at a time, so the report is accumulated
+ * rather than computed once. A page that fails does not erase the pages that
+ * succeeded — which is the existing per-recipient delivery model, preserved.
+ */
+function mergeReport(total: SendReport, page: SendReport): SendReport {
+  total.requested += page.requested;
+  total.sent += page.sent;
+  total.skipped += page.skipped;
+  total.failed += page.failed;
+  return total;
+}
+
+const emptyReport = (): SendReport => ({ requested: 0, sent: 0, skipped: 0, failed: 0 });
 
 export const notificationService = {
   /**
@@ -231,37 +252,40 @@ export const notificationService = {
       return { requested: 0, sent: 0, skipped: 0, failed: 0 };
     }
 
-    const audience = await notificationRepository.emailAudienceForEvents();
     const when = formatDojoRange(input.startsAt, input.endsAt);
 
+    let requested = 0;
     let sent = 0;
     let failed = 0;
 
-    for (const person of audience) {
-      try {
-        const result = await emailService.sendEventAnnouncement({
-          to: person.email,
-          name: person.full_name,
-          title: input.title,
-          when,
-          roomName: input.roomName,
-          hostName: input.hostName,
-          description: input.description,
-        });
-        if (result.delivered) sent += 1;
-        else failed += 1;
-      } catch (error) {
-        failed += 1;
-        logger.warn({ error, to: person.email }, 'Event announcement email failed');
+    // Paged: the audience is every profile, and reading it in one query
+    // truncated at `max_rows` so nobody past the first page was ever mailed.
+    for await (const page of notificationRepository.emailAudiencePages()) {
+      requested += page.length;
+
+      for (const person of page) {
+        try {
+          const result = await emailService.sendEventAnnouncement({
+            to: person.email,
+            name: person.full_name,
+            title: input.title,
+            when,
+            roomName: input.roomName,
+            hostName: input.hostName,
+            description: input.description,
+          });
+          if (result.delivered) sent += 1;
+          else failed += 1;
+        } catch (error) {
+          failed += 1;
+          logger.warn({ error, to: person.email }, 'Event announcement email failed');
+        }
       }
     }
 
-    logger.info(
-      { title: input.title, requested: audience.length, sent, failed },
-      'Event announcement emailed',
-    );
+    logger.info({ title: input.title, requested, sent, failed }, 'Event announcement emailed');
 
-    return { requested: audience.length, sent, skipped: 0, failed };
+    return { requested, sent, skipped: 0, failed };
   },
 
   /** Announce a newly published event to everyone who asked for event news. */
@@ -272,19 +296,26 @@ export const notificationService = {
     endsAt: string;
     roomName: string;
   }): Promise<SendReport> {
-    const targets = await notificationRepository.audienceFor('events');
+    const report = emptyReport();
 
-    return this.send(
-      targets.map((target) => ({
-        profileId: target.profile_id,
-        token: target.push_token,
-        channel: 'events' as const,
-        title: input.title,
-        body: `${formatDojoRange(input.startsAt, input.endsAt)} · ${input.roomName}`,
-        dedupeKey: `event-announce:${input.eventId}`,
-        data: { route: `/(app)/event/${input.eventId}` },
-      })),
-    );
+    for await (const page of notificationRepository.audiencePages('events')) {
+      mergeReport(
+        report,
+        await this.send(
+          page.map((target) => ({
+            profileId: target.profile_id,
+            token: target.push_token,
+            channel: 'events' as const,
+            title: input.title,
+            body: `${formatDojoRange(input.startsAt, input.endsAt)} · ${input.roomName}`,
+            dedupeKey: `event-announce:${input.eventId}`,
+            data: routeTo(NOTIFICATION_ROUTES.event(input.eventId)),
+          })),
+        ),
+      );
+    }
+
+    return report;
   },
 
   /**
@@ -294,24 +325,31 @@ export const notificationService = {
    * Monday afternoon after a deploy does not send it twice.
    */
   async sendWeeklyDigest(input: { weekKey: string; eventCount: number }): Promise<SendReport> {
-    const targets = await notificationRepository.audienceFor('weekly_digest');
-
     const body =
       input.eventCount === 0
         ? 'A quiet week on the calendar — the floor is all yours.'
         : `${input.eventCount} ${input.eventCount === 1 ? 'event' : 'events'} on the board this week.`;
 
-    return this.send(
-      targets.map((target) => ({
-        profileId: target.profile_id,
-        token: target.push_token,
-        channel: 'digest' as const,
-        title: 'This week at the Dojo',
-        body,
-        dedupeKey: `digest:${input.weekKey}`,
-        data: { route: '/(app)/(tabs)/events' },
-      })),
-    );
+    const report = emptyReport();
+
+    for await (const page of notificationRepository.audiencePages('weekly_digest')) {
+      mergeReport(
+        report,
+        await this.send(
+          page.map((target) => ({
+            profileId: target.profile_id,
+            token: target.push_token,
+            channel: 'digest' as const,
+            title: 'This week at the Dojo',
+            body,
+            dedupeKey: `digest:${input.weekKey}`,
+            data: routeTo(NOTIFICATION_ROUTES.events),
+          })),
+        ),
+      );
+    }
+
+    return report;
   },
 
   /**
@@ -323,19 +361,26 @@ export const notificationService = {
    * booking id, so the two can never both fire.
    */
   async sendBookingReminders(withinMinutes: number): Promise<SendReport> {
-    const rows = await notificationRepository.upcomingBookingsNeedingReminder(withinMinutes);
+    const report = emptyReport();
 
-    return this.send(
-      rows.map((row) => ({
-        profileId: row.profile_id,
-        token: row.push_token,
-        channel: 'bookings' as const,
-        title: `${row.resource_name} in ${withinMinutes} minutes`,
-        body: formatDojoRange(row.starts_at, row.ends_at),
-        dedupeKey: `booking-reminder:${row.booking_id}`,
-        data: { route: '/(app)/(tabs)/book' },
-      })),
-    );
+    for await (const page of notificationRepository.bookingReminderPages(withinMinutes)) {
+      mergeReport(
+        report,
+        await this.send(
+          page.map((row) => ({
+            profileId: row.profile_id,
+            token: row.push_token,
+            channel: 'bookings' as const,
+            title: `${row.resource_name} in ${withinMinutes} minutes`,
+            body: formatDojoRange(row.starts_at, row.ends_at),
+            dedupeKey: `booking-reminder:${row.booking_id}`,
+            data: routeTo(NOTIFICATION_ROUTES.bookings),
+          })),
+        ),
+      );
+    }
+
+    return report;
   },
 
   /**
@@ -346,23 +391,30 @@ export const notificationService = {
    * lands.
    */
   async sendMembershipReminders(daysAhead: number): Promise<SendReport> {
-    const rows = await notificationRepository.membershipsExpiringWithin(daysAhead);
+    const report = emptyReport();
 
-    return this.send(
-      rows.map((row) => ({
-        profileId: row.profile_id,
-        token: row.push_token,
-        channel: 'default' as const,
-        title: row.cancel_at_period_end
-          ? 'Your membership ends soon'
-          : 'Your membership renews soon',
-        body: row.cancel_at_period_end
-          ? 'Access ends at the close of this period. Reactivate any time from Settings.'
-          : 'Your plan renews automatically. Manage it from Settings.',
-        dedupeKey: `membership-reminder:${row.membership_id}:${row.current_period_end}`,
-        data: { route: '/(app)/settings' },
-      })),
-    );
+    for await (const page of notificationRepository.membershipReminderPages(daysAhead)) {
+      mergeReport(
+        report,
+        await this.send(
+          page.map((row) => ({
+            profileId: row.profile_id,
+            token: row.push_token,
+            channel: 'default' as const,
+            title: row.cancel_at_period_end
+              ? 'Your membership ends soon'
+              : 'Your membership renews soon',
+            body: row.cancel_at_period_end
+              ? 'Access ends at the close of this period. Reactivate any time from Settings.'
+              : 'Your plan renews automatically. Manage it from Settings.',
+            dedupeKey: `membership-reminder:${row.membership_id}:${row.current_period_end}`,
+            data: routeTo(NOTIFICATION_ROUTES.settings),
+          })),
+        ),
+      );
+    }
+
+    return report;
   },
 
   /** Exposed for the audience-shaped tests, which assert on consent filtering. */
