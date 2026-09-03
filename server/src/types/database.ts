@@ -484,3 +484,215 @@ export interface CertificationRow {
   granted_at: string;
   expires_at: string | null;
 }
+
+// ---------------------------------------------------------------------------
+// Rows that had no type until the `Database` map below needed one.
+//
+// The map has to name every relation PostgREST can reach, otherwise a valid
+// `.from('zones')` becomes a type error. These eight are transcribed from the
+// migrations exactly like the rest of this file.
+// ---------------------------------------------------------------------------
+
+export interface EventRow {
+  id: string;
+  slug: string;
+  title: string;
+  description: string | null;
+  category: EventCategory;
+  status: EventStatus;
+  host_profile_id: string | null;
+  host_name: string;
+  resource_id: string | null;
+  room_name: string;
+  starts_at: string;
+  ends_at: string;
+  capacity: number;
+  cover_path: string | null;
+  members_only: boolean;
+  created_at: string;
+  updated_at: string;
+  series_id: string | null;
+  /** `date`, not `timestamptz` — the calendar day an occurrence belongs to. */
+  occurrence_date: string | null;
+}
+
+export interface DonationRow {
+  id: string;
+  payment_id: string;
+  profile_id: string | null;
+  amount_cents: number;
+  anonymous: boolean;
+  receipt_email: string | null;
+  created_at: string;
+}
+
+export interface ResourceRow {
+  id: string;
+  slug: string;
+  kind: ResourceKind;
+  name: string;
+  model: string | null;
+  zone_id: string | null;
+  seats: number | null;
+  amenities: string | null;
+  status: ResourceStatus;
+  requires_cert: boolean;
+  min_duration_minutes: number;
+  max_duration_minutes: number;
+  /** `time`, serialised as `HH:MM:SS`. */
+  opens_at: string;
+  closes_at: string;
+  image_path: string | null;
+  active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProgramApplicationRow {
+  id: string;
+  profile_id: string;
+  track_id: string;
+  status: ApplicationStatus;
+  answers: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface EventStatsRow {
+  event_id: string;
+  going_count: number;
+  waitlist_count: number;
+}
+
+export interface MembershipAddonRow {
+  id: string;
+  membership_id: string;
+  plan_id: string;
+  active: boolean;
+  created_at: string;
+}
+
+export interface OccupancySampleRow {
+  /** `bigint generated always as identity` — PostgREST sends it as a number. */
+  id: number;
+  zone_id: string | null;
+  head_count: number;
+  recorded_at: string;
+}
+
+export interface ZoneRow {
+  id: string;
+  name: string;
+  capacity: number;
+  /** `numeric(4,3)`. */
+  weight: number;
+  sort_order: number;
+}
+
+// ---------------------------------------------------------------------------
+// The shape `@supabase/supabase-js` wants as its type parameter.
+//
+// Hand-written, like everything above it, and for the same reason: the
+// generator needs a live database to run and would flatten the commentary that
+// makes this file readable. What it buys is the thing the generic is actually
+// for — `.from('bookins')` and `.eq('profil_id', …)` stop compiling.
+//
+// `Insert`/`Update` are `Partial<Row>` rather than a faithful required/optional
+// split. The generator derives that from column defaults; doing it by hand for
+// 35 tables would be a second copy of the schema to keep in step, and the
+// payoff here is catching wrong NAMES, not wrong optionality.
+// ---------------------------------------------------------------------------
+
+interface TableDef<Row> {
+  Row: Row;
+  Insert: Partial<Row>;
+  Update: Partial<Row>;
+  Relationships: [];
+}
+
+interface ViewDef<Row> {
+  Row: Row;
+  Relationships: [];
+}
+
+export interface Database {
+  public: {
+    Tables: {
+      board_members: TableDef<BoardMemberRow>;
+      bookings: TableDef<BookingRow>;
+      certifications: TableDef<CertificationRow>;
+      content_blocks: TableDef<ContentBlockRow>;
+      documents: TableDef<DocumentRow>;
+      donations: TableDef<DonationRow>;
+      door_access_logs: TableDef<DoorAccessLogRow>;
+      door_credentials: TableDef<DoorCredentialRow>;
+      event_requests: TableDef<EventRequestRow>;
+      event_rsvps: TableDef<EventRsvpRow>;
+      event_series: TableDef<EventSeriesRow>;
+      event_stats: TableDef<EventStatsRow>;
+      events: TableDef<EventRow>;
+      faqs: TableDef<FaqRow>;
+      membership_addons: TableDef<MembershipAddonRow>;
+      memberships: TableDef<MembershipRow>;
+      notification_preferences: TableDef<NotificationPreferencesRow>;
+      occupancy_samples: TableDef<OccupancySampleRow>;
+      payments: TableDef<PaymentRow>;
+      plans: TableDef<PlanRow>;
+      press_mentions: TableDef<PressMentionRow>;
+      profiles: TableDef<ProfileRow>;
+      program_applications: TableDef<ProgramApplicationRow>;
+      program_tracks: TableDef<ProgramTrackRow>;
+      programs: TableDef<ProgramRow>;
+      push_deliveries: TableDef<PushDeliveryRow>;
+      resources: TableDef<ResourceRow>;
+      sessions: TableDef<SessionRow>;
+      site_settings: TableDef<SiteSettingRow>;
+      startups: TableDef<StartupRow>;
+      stripe_webhook_events: TableDef<StripeWebhookEventRow>;
+      testimonials: TableDef<TestimonialRow>;
+      tours: TableDef<TourRow>;
+      wifi_credentials: TableDef<WifiCredentialRow>;
+      zones: TableDef<ZoneRow>;
+    };
+    Views: {
+      current_occupancy: ViewDef<OccupancyRow>;
+      event_feed: ViewDef<EventFeedRow>;
+      live_session_view: ViewDef<LiveSessionRow>;
+      member_directory: ViewDef<MemberDirectoryRow>;
+      resource_availability: ViewDef<ResourceAvailabilityRow>;
+      staff_queue: ViewDef<StaffQueueRow>;
+    };
+    Functions: {
+      generate_event_occurrences: {
+        Args: { p_series_id: string; p_limit: number };
+        Returns: number;
+      };
+      generate_all_event_occurrences: {
+        Args: { p_limit: number };
+        Returns: number;
+      };
+      sample_occupancy: { Args: Record<string, never>; Returns: number };
+      prune_occupancy_samples: { Args: Record<string, never>; Returns: number };
+    };
+    Enums: {
+      application_status: ApplicationStatus;
+      billing_period: BillingPeriod;
+      booking_status: BookingStatus;
+      document_kind: DocumentKind;
+      document_status: DocumentStatus;
+      event_category: EventCategory;
+      event_repeat_mode: EventRepeatMode;
+      event_status: EventStatus;
+      member_role: MemberRole;
+      membership_status: MembershipStatus;
+      payment_status: PaymentStatus;
+      push_delivery_status: PushDeliveryStatus;
+      resource_kind: ResourceKind;
+      resource_status: ResourceStatus;
+      rsvp_status: RsvpStatus;
+      series_status: SeriesStatus;
+      tour_status: TourStatus;
+    };
+    CompositeTypes: Record<string, never>;
+  };
+}
