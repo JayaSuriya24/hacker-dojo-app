@@ -1,7 +1,7 @@
 import { adminClient, userClient } from '../config/supabase.js';
 import { unwrap, unwrapList, unwrapMaybe } from '../utils/postgrest.js';
 import { translatePostgrestError } from '../utils/postgrest.js';
-import type { StartupRow } from '../types/database.js';
+import type { Database, StartupRow } from '../types/database.js';
 
 /**
  * Startups.
@@ -29,9 +29,18 @@ export interface StartupWrite {
   sortOrder: number;
 }
 
-/** Snake-cased for the table; the service speaks camel. */
-function toRow(input: Partial<StartupWrite>): Record<string, unknown> {
-  const row: Record<string, unknown> = {};
+/**
+ * Snake-cased for the table; the service speaks camel.
+ *
+ * Typed as the table's own Update shape rather than `Record<string, unknown>`:
+ * the loose type compiled against the old hand-written schema only because its
+ * Insert and Update resolved to `never`, which accepted anything. Against the
+ * generated types a column typo is a compile error again.
+ */
+type StartupWriteRow = Database['public']['Tables']['startups']['Update'];
+
+function toRow(input: Partial<StartupWrite>): StartupWriteRow {
+  const row: StartupWriteRow = {};
   if (input.name !== undefined) row['name'] = input.name;
   if (input.slug !== undefined) row['slug'] = input.slug;
   if (input.mark !== undefined) row['mark'] = input.mark;
@@ -108,7 +117,11 @@ export const startupRepository = {
     return unwrap(
       await userClient(accessToken)
         .from('startups')
-        .insert(toRow(input))
+        // `toRow` yields the Update shape, where every column is optional.
+        // `create` is the one caller that always supplies a complete startup,
+        // so the Insert shape is asserted here rather than weakening the type
+        // for the three callers that legitimately send a partial row.
+        .insert(toRow(input) as Database['public']['Tables']['startups']['Insert'])
         .select('*')
         .single<StartupRow>(),
       'Could not create that startup.',
