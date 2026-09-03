@@ -157,7 +157,16 @@ const config: ExpoConfig = {
     ],
   },
 
-  web: { bundler: 'metro', output: 'static', favicon: './assets/favicon.png' },
+  /*
+   * `single`, not `static`.
+   *
+   * `static` server-renders every request in Node. Each render builds a
+   * Supabase client that reaches for `window`, fails, warns, and leaks — the
+   * dev server reached 4GB and aborted three times in one session, at 7.5k,
+   * 31k and 19.6k of those warnings. `single` serves web as a plain SPA: no
+   * Node render, no leak. Native builds do not use this field at all.
+   */
+  web: { bundler: 'metro', output: 'single', favicon: './assets/favicon.png' },
 
   plugins: [
     'expo-router',
