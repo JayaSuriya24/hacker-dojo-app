@@ -1,4 +1,4 @@
-import { adminClient } from '../config/supabase.js';
+import { adminClient, userClient } from '../config/supabase.js';
 import { unwrap, unwrapList, unwrapMaybe } from '../utils/postgrest.js';
 import { translatePostgrestError } from '../utils/postgrest.js';
 import type { StartupRow } from '../types/database.js';
@@ -93,16 +93,35 @@ export const startupRepository = {
     );
   },
 
-  async create(input: StartupWrite): Promise<StartupRow> {
+  /*
+   * The writes run as the CALLER, not as the service role.
+   *
+   * `startups_insert_staff` / `_update_staff` / `_delete_staff` gate these on
+   * `is_staff()`, and the service role bypasses RLS — so on `adminClient` those
+   * three policies never ran, and `requireRole` in the route chain was the only
+   * thing standing between a routing mistake and an open write endpoint. The
+   * comment above `staffOnly` promises two independent gates; this is what makes
+   * the second one real. Reads stay on `adminClient`: `startups_select_all` is
+   * `using (true)`, so there is nothing for RLS to decide.
+   */
+  async create(accessToken: string, input: StartupWrite): Promise<StartupRow> {
     return unwrap(
-      await adminClient.from('startups').insert(toRow(input)).select('*').single<StartupRow>(),
+      await userClient(accessToken)
+        .from('startups')
+        .insert(toRow(input))
+        .select('*')
+        .single<StartupRow>(),
       'Could not create that startup.',
     );
   },
 
-  async update(id: string, patch: Partial<StartupWrite>): Promise<StartupRow | null> {
+  async update(
+    accessToken: string,
+    id: string,
+    patch: Partial<StartupWrite>,
+  ): Promise<StartupRow | null> {
     return unwrapMaybe(
-      await adminClient
+      await userClient(accessToken)
         .from('startups')
         .update(toRow(patch))
         .eq('id', id)
@@ -112,8 +131,8 @@ export const startupRepository = {
     );
   },
 
-  async remove(id: string): Promise<boolean> {
-    const { data, error } = await adminClient
+  async remove(accessToken: string, id: string): Promise<boolean> {
+    const { data, error } = await userClient(accessToken)
       .from('startups')
       .delete()
       .eq('id', id)
@@ -132,9 +151,13 @@ export const startupRepository = {
    * startup alongside its new position would silently overwrite an edit made
    * in between. Only `sort_order` is touched.
    */
-  async applyOrder(entries: Array<{ id: string; sortOrder: number }>): Promise<void> {
+  async applyOrder(
+    accessToken: string,
+    entries: Array<{ id: string; sortOrder: number }>,
+  ): Promise<void> {
+    const client = userClient(accessToken);
     for (const entry of entries) {
-      const { error } = await adminClient
+      const { error } = await client
         .from('startups')
         .update({ sort_order: entry.sortOrder })
         .eq('id', entry.id);
