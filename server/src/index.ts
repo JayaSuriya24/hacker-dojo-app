@@ -6,8 +6,61 @@ import { schedulerService } from './services/scheduler.service.js';
 
 const app = createApp();
 
-const server = app.listen(env.PORT, () => {
-  logger.info({ port: env.PORT, env: env.NODE_ENV }, 'Hacker Dojo API listening');
+/**
+ * `host` is passed explicitly but is normally undefined, which listens on every
+ * interface exactly as omitting it does — see the note on `HOST` in env.ts for
+ * why that default is not written as `0.0.0.0`.
+ *
+ * The bound address is read back from the socket rather than echoed from the
+ * configuration: those differ whenever the platform falls back, and the log is
+ * only worth having if it says where the process actually is.
+ */
+const server = app.listen({ port: env.PORT, host: env.HOST }, () => {
+  const address = server.address();
+
+  // Express hands this same callback to `server.once('error')` as well as to
+  // 'listening' (see its `app.listen`), so it runs on a FAILED bind too — the
+  // API used to announce itself as listening when the port was taken and the
+  // process was already on its way out. A null address is that case; the
+  // handler below has the real reason and the exit status.
+  if (address === null) return;
+
+  // No `env` key here: pino's `base` already stamps NODE_ENV on every line, and
+  // adding it again emitted the field TWICE in the same JSON object. Duplicate
+  // keys are last-one-wins in most parsers and a hard error in some ingestors.
+  logger.info(
+    typeof address === 'string'
+      ? { socket: address }
+      : { port: address.port, host: address.address },
+    'Hacker Dojo API listening',
+  );
+});
+
+/**
+ * A port already taken is a configuration mistake, and it should read as one.
+ *
+ * Without this the EADDRINUSE reaches `uncaughtException` below, which calls
+ * `shutdown` — which drains a server that never listened, gets
+ * `ERR_SERVER_NOT_RUNNING` back from `close`, and logs "Error while closing
+ * server". The exit status was right; the two errors above it pointed nowhere
+ * near the actual problem. Nothing is listening and the scheduler's timers are
+ * unref'd, so there is genuinely nothing to drain here.
+ */
+server.on('error', (error: NodeJS.ErrnoException) => {
+  if (error.code === 'EADDRINUSE') {
+    logger.fatal(
+      { port: env.PORT, host: env.HOST ?? '(all interfaces)' },
+      'Port is already in use — is another instance running?',
+    );
+  } else if (error.code === 'EACCES') {
+    logger.fatal(
+      { port: env.PORT },
+      'Not permitted to bind this port — ports below 1024 need privileges.',
+    );
+  } else {
+    logger.fatal({ err: error }, 'Server failed to start');
+  }
+  process.exit(1);
 });
 
 /**
