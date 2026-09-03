@@ -42,22 +42,30 @@ export const startupController = {
 
   create: asyncHandler<AuthenticatedRequest>(async (req, res: Response) => {
     const body = req.body as z.infer<typeof createStartupSchema>;
-    res.status(201).json({ data: await startupService.createStartup(body) });
+    res
+      .status(201)
+      .json({ data: await startupService.createStartup(req.context.user.accessToken, body) });
   }),
 
   update: asyncHandler<AuthenticatedRequest>(async (req, res: Response) => {
     const body = req.body as z.infer<typeof updateStartupSchema>;
-    const data = await startupService.updateStartup(req.params['id'] as string, body);
+    const data = await startupService.updateStartup(
+      req.context.user.accessToken,
+      req.params['id'] as string,
+      body,
+    );
     res.json({ data });
   }),
 
   remove: asyncHandler<AuthenticatedRequest>(async (req, res: Response) => {
-    await startupService.deleteStartup(req.params['id'] as string);
+    await startupService.deleteStartup(req.context.user.accessToken, req.params['id'] as string);
     res.status(204).send();
   }),
 
   reorder: asyncHandler<AuthenticatedRequest>(async (req, res: Response) => {
     const body = req.body as z.infer<typeof reorderStartupsSchema>;
-    res.json({ data: await startupService.reorderStartups(body.orderedIds) });
+    res.json({
+      data: await startupService.reorderStartups(req.context.user.accessToken, body.orderedIds),
+    });
   }),
 };

@@ -21,12 +21,37 @@ export const logger = pino({
       'req.headers["x-api-key"]',
       'req.headers["stripe-signature"]',
       'res.headers["set-cookie"]',
+      // `headers` reached directly rather than through pino-http's `req`.
+      'headers.authorization',
+      '*.authorization',
+      'password',
       '*.password',
+      'token',
       '*.token',
       '*.accessToken',
       '*.refreshToken',
       '*.client_secret',
       '*.clientSecret',
+      // The database spells these in snake_case, and `*.token` does not match
+      // `push_token` — a member's push token is a credential for sending to
+      // their device, and a logged row would have carried it in full.
+      'push_token',
+      '*.push_token',
+      '*.pushToken',
+      // The Wi-Fi PIN, which `wifiService` returns as a bare `pin` field. It is
+      // five digits and it is the member's network credential.
+      'pin',
+      '*.pin',
+      '*.apiKey',
+      '*.api_key',
+      // supabase-js sends the key in a header spelled exactly `apikey` — one
+      // word, lower-case — which neither of the two above matches.
+      'apikey',
+      '*.apikey',
+      'req.headers.apikey',
+      '*.secret',
+      '*.serviceRoleKey',
+      '*.service_role_key',
       'body.password',
       'body.token',
     ],

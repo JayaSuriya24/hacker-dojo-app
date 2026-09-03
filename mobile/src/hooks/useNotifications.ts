@@ -8,6 +8,8 @@ import { useAuth } from '~/providers/AuthProvider';
 import { useUpdateNotificationPreferences } from '~/features/profile/hooks/useProfile';
 import { logger } from '~/services/logger';
 import { brand } from '~/theme/tokens';
+import { isUsableEasProjectId } from '~/constants/easProject';
+import { NOTIFICATION_HREF_KEY, notificationHref } from '~/services/notificationRoute';
 
 /**
  * Push and local notifications.
@@ -30,8 +32,10 @@ import { brand } from '~/theme/tokens';
  * Expo push tokens all resolve to the expo-modules-core proxy on web, which
  * throws "The method or property X is not available on web" on the first call.
  *
- * `setNotificationHandler` and the response listener are safe: they are plain
- * JS and are already exercised on every web load by the root layout.
+ * `setNotificationHandler` and the response LISTENER are safe: they are plain
+ * JS and are already exercised on every web load by the root layout. The
+ * cold-start read is NOT — `getLastNotificationResponseAsync` crosses into the
+ * native module and rejects on web, so it is guarded like the rest.
  *
  * Local reminders are a native affordance and the web target exists to lay out
  * screens, so each entry point below degrades to a documented no-op. Throwing
@@ -39,7 +43,7 @@ import { brand } from '~/theme/tokens';
  * succeeded server-side, and there is nothing useful for it to do with the
  * failure.
  */
-const supportsScheduledNotifications = Platform.OS !== 'web';
+const supportsNativeNotifications = Platform.OS !== 'web';
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -105,17 +109,58 @@ export function useNotificationSetup(): void {
   }, []);
 
   useEffect(() => {
-    // A notification tapped from the tray carries the destination in its data
-    // payload, so the server decides where a given notification lands rather
-    // than the client having to know every notification type.
-    const subscription = Notifications.addNotificationResponseReceivedListener((response) => {
-      const target = response.notification.request.content.data?.['href'];
-      if (typeof target === 'string' && target.startsWith('/')) {
-        router.push(target as never);
-      }
-    });
+    /**
+     * Responses already acted on, by notification id.
+     *
+     * `getLastNotificationResponseAsync` returns the last response the app
+     * received, not only the one that launched it — so without this the
+     * cold-start read and the live listener would both fire for the same tap
+     * and navigate twice.
+     */
+    const handled = new Set<string>();
 
-    return () => subscription.remove();
+    const navigate = (response: Notifications.NotificationResponse) => {
+      const id = response.notification.request.identifier;
+      if (handled.has(id)) return;
+      handled.add(id);
+
+      // A notification with no destination is ordinary — a renewal notice has
+      // no screen to open — so this is a return, not an error.
+      const href = notificationHref(response.notification.request.content.data);
+      if (!href) return;
+
+      router.push(href as never);
+    };
+
+    /*
+     * Cold start. When a tap launches the app from terminated, the response can
+     * be delivered before this effect mounts and the listener below never sees
+     * it — the tap opens the app on the home screen instead of the event that
+     * was tapped. This is the documented way to recover it.
+     *
+     * Native only. On web this call rejects rather than resolving empty, so an
+     * unguarded read logged a `push.coldStart` exception on every page load —
+     * noise from a path that can never fire there, since nothing launches the
+     * web target from a notification.
+     */
+    let active = true;
+    if (supportsNativeNotifications) {
+      void Notifications.getLastNotificationResponseAsync()
+        .then((response) => {
+          if (active && response) navigate(response);
+        })
+        .catch((error: unknown) => {
+          logger.exception(error, { scope: 'push.coldStart' });
+        });
+    }
+
+    // Foreground and background taps, while the app is alive.
+    const subscription = Notifications.addNotificationResponseReceivedListener(navigate);
+
+    return () => {
+      active = false;
+      subscription.remove();
+    };
   }, []);
 }
 
@@ -154,7 +199,7 @@ export function useRegisterPushToken() {
 
     // Expo push tokens need a native push service. `Device.isDevice` is true in
     // a browser, so it does not stand in for this check.
-    if (!supportsScheduledNotifications) {
+    if (!supportsNativeNotifications) {
       logger.info('Skipping push registration on web');
       return 'unsupported';
     }
@@ -178,11 +223,34 @@ export function useRegisterPushToken() {
 
     if (status !== 'granted') return 'denied';
 
+    /*
+     * Expo mints a push token against a specific EAS project, so a missing or
+     * placeholder id cannot produce a working one — the request just fails.
+     *
+     * Checked BEFORE the call rather than caught after it, because the two
+     * outcomes need different answers. A rejected permission is the member's
+     * decision and 'denied' tells Settings to explain how to change it; a build
+     * with no EAS project is our mistake, and telling someone to allow
+     * notifications they have already allowed is how this bug stayed invisible.
+     *
+     * Not a workaround for the failure: `app.config.ts` refuses to BUILD for
+     * production or on EAS without a real id, so this branch should be
+     * unreachable in a shipped app. It is the seatbelt, and the log is loud
+     * because reaching it means the build guard was bypassed.
+     */
+    const projectId = Constants.expoConfig?.extra?.['eas']?.projectId as string | undefined;
+
+    if (!isUsableEasProjectId(projectId)) {
+      logger.error('No usable EAS project id — push cannot be registered for this build', {
+        scope: 'push.register',
+        // The value, not the member's data: this is a build configuration fault.
+        projectId: projectId ?? '(absent)',
+      });
+      return 'unsupported';
+    }
+
     try {
-      const projectId = Constants.expoConfig?.extra?.['eas']?.projectId as string | undefined;
-      const token = await Notifications.getExpoPushTokenAsync(
-        projectId ? { projectId } : undefined,
-      );
+      const token = await Notifications.getExpoPushTokenAsync({ projectId });
 
       await updatePreferences({ pushToken: token.data });
       return 'granted';
@@ -200,7 +268,7 @@ export async function scheduleBookingReminder(input: {
   startsAt: Date;
   minutesBefore?: number;
 }): Promise<string | null> {
-  if (!supportsScheduledNotifications) return null;
+  if (!supportsNativeNotifications) return null;
 
   const fireAt = new Date(input.startsAt.getTime() - (input.minutesBefore ?? 15) * 60_000);
   if (fireAt.getTime() <= Date.now()) return null;
@@ -210,7 +278,8 @@ export async function scheduleBookingReminder(input: {
       content: {
         title: `${input.resourceName} in ${input.minutesBefore ?? 15} minutes`,
         body: 'Your reservation starts shortly.',
-        data: { href: '/book', bookingId: input.bookingId },
+        // Same canonical key the server uses — see `notificationRoute.ts`.
+        data: { [NOTIFICATION_HREF_KEY]: '/book', bookingId: input.bookingId },
       },
       trigger: {
         type: Notifications.SchedulableTriggerInputTypes.DATE,
@@ -225,6 +294,6 @@ export async function scheduleBookingReminder(input: {
 }
 
 export async function cancelScheduled(identifier: string): Promise<void> {
-  if (!supportsScheduledNotifications) return;
+  if (!supportsNativeNotifications) return;
   await Notifications.cancelScheduledNotificationAsync(identifier);
 }

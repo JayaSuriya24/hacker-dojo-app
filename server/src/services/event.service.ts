@@ -3,7 +3,12 @@ import { describeRecurrence } from '../utils/recurrence.js';
 import { logger } from '../config/logger.js';
 import { AppError } from '../utils/errors.js';
 import type { AuthenticatedUser } from '../types/http.js';
-import type { EventCategory, EventFeedRow, RsvpStatus } from '../types/database.js';
+import type {
+  EventCategory,
+  EventFeedRow,
+  EventRepeatMode,
+  RsvpStatus,
+} from '../types/database.js';
 
 export interface EventView {
   id: string;
@@ -179,6 +184,16 @@ export const eventService = {
     await eventRepository.cancelRsvp(user.accessToken, eventId, user.id);
   },
 
+  /**
+   * Submit a request to host an event.
+   *
+   * The input type mirrors `hostEventSchema` in full, deliberately. It used to
+   * declare only the six non-scheduling fields while the body carried thirteen,
+   * and because the service spread `...input` straight through, the extra ones
+   * were present at runtime and invisible to the compiler — so the repository
+   * dropping them was a silent behavioural bug rather than a type error.
+   * Naming every field here is what makes the next omission fail the build.
+   */
   async requestToHost(
     user: AuthenticatedUser,
     input: {
@@ -188,6 +203,14 @@ export const eventService = {
       preferredDate: string;
       preferredRoom: string;
       notes?: string | undefined;
+      /** Local wall clock at the Dojo, `HH:MM`. */
+      preferredTime: string;
+      durationMinutes: number;
+      repeatMode: EventRepeatMode;
+      /** Postgres `dow`: 0 = Sunday … 6 = Saturday. */
+      repeatWeekdays: number[];
+      repeatIntervalWeeks: number;
+      repeatUntil?: string | undefined;
     },
   ): Promise<{ reference: string }> {
     const row = await eventRepository.createRequest(user.accessToken, {

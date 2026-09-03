@@ -146,16 +146,19 @@ export const startupService = {
     return issues;
   },
 
-  async createStartup(input: {
-    name: string;
-    mark: string;
-    tagline: string;
-    stage: string;
-    foundedYear: string;
-    hiring: boolean;
-    website?: string | null | undefined;
-    sortOrder?: number | undefined;
-  }): Promise<StartupView> {
+  async createStartup(
+    accessToken: string,
+    input: {
+      name: string;
+      mark: string;
+      tagline: string;
+      stage: string;
+      foundedYear: string;
+      hiring: boolean;
+      website?: string | null | undefined;
+      sortOrder?: number | undefined;
+    },
+  ): Promise<StartupView> {
     const slug = slugify(input.name);
     if (!slug) throw AppError.badRequest('That name cannot be turned into a web address.');
 
@@ -183,10 +186,11 @@ export const startupService = {
       sortOrder: nextOrder,
     };
 
-    return toView(await startupRepository.create(write));
+    return toView(await startupRepository.create(accessToken, write));
   },
 
   async updateStartup(
+    accessToken: string,
     id: string,
     patch: {
       name?: string | undefined;
@@ -228,13 +232,13 @@ export const startupService = {
 
     if (Object.keys(write).length === 0) return toView(current);
 
-    const updated = await startupRepository.update(id, write);
+    const updated = await startupRepository.update(accessToken, id, write);
     if (!updated) throw AppError.notFound('That startup is no longer listed.');
     return toView(updated);
   },
 
-  async deleteStartup(id: string): Promise<void> {
-    const removed = await startupRepository.remove(id);
+  async deleteStartup(accessToken: string, id: string): Promise<void> {
+    const removed = await startupRepository.remove(accessToken, id);
     if (!removed) throw AppError.notFound('That startup is no longer listed.');
   },
 
@@ -245,7 +249,7 @@ export const startupService = {
    * reorder is worse than a rejected one, because the half that applied leaves
    * the list in an order nobody chose.
    */
-  async reorderStartups(orderedIds: string[]): Promise<StartupView[]> {
+  async reorderStartups(accessToken: string, orderedIds: string[]): Promise<StartupView[]> {
     if (orderedIds.length === 0) throw AppError.badRequest('Send the startups in their new order.');
 
     const unique = new Set(orderedIds);
@@ -260,6 +264,7 @@ export const startupService = {
     }
 
     await startupRepository.applyOrder(
+      accessToken,
       orderedIds.map((id, index) => ({ id, sortOrder: index + 1 })),
     );
 

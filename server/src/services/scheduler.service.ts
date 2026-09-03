@@ -2,8 +2,9 @@ import { env } from '../config/env.js';
 import { logger } from '../config/logger.js';
 import { occupancyRepository } from '../repositories/staff.repository.js';
 import { eventSeriesRepository } from '../repositories/eventSeries.repository.js';
+import { eventRepository } from '../repositories/event.repository.js';
 import { notificationService } from './notification.service.js';
-import { toDojoWallClock } from '../utils/time.js';
+import { dojoWeekWindow, toDojoWallClock } from '../utils/time.js';
 
 /**
  * Background work.
@@ -79,6 +80,23 @@ export const schedulerService = {
     return zones;
   },
 
+  /**
+   * Email tomorrow's confirmed tours.
+   *
+   * The window is the 24-to-25-hour band ahead, which one hourly tick covers
+   * exactly once — so a tour is reminded a single time without needing a
+   * "reminded_at" column to track it.
+   */
+  async remindUpcomingTours(): Promise<number> {
+    const now = Date.now();
+    const from = new Date(now + 24 * 60 * 60_000).toISOString();
+    const to = new Date(now + 25 * 60 * 60_000).toISOString();
+
+    const sent = await notificationService.sendTourReminders(from, to);
+    if (sent > 0) logger.info({ sent }, 'Reminded upcoming tours');
+    return sent;
+  },
+
   async sendDueReminders(): Promise<void> {
     await notificationService.sendBookingReminders(BOOKING_REMINDER_MINUTES);
     await notificationService.sendMembershipReminders(MEMBERSHIP_REMINDER_DAYS);
@@ -99,9 +117,25 @@ export const schedulerService = {
     if (weekday !== DIGEST_WEEKDAY || wall.hour !== DIGEST_HOUR) return false;
 
     const weekKey = isoWeekKey(now);
-    const report = await notificationService.sendWeeklyDigest({ weekKey, eventCount: 0 });
 
-    logger.info({ weekKey, ...report }, 'Weekly digest dispatched');
+    /*
+     * The number the digest quotes.
+     *
+     * This was a hardcoded `0`, so every digest ever sent said "A quiet week on
+     * the calendar — the floor is all yours", including weeks with a full
+     * calendar. `sendWeeklyDigest` has always had the plural branch; nothing
+     * could reach it.
+     *
+     * The window is the same ISO week `weekKey` names — Monday 00:00 to the
+     * following Monday 00:00 in the Dojo's zone — so the message and its dedupe
+     * key describe the same seven days.
+     */
+    const week = dojoWeekWindow(now);
+    const eventCount = await eventRepository.countPublishedBetween(week.startsAt, week.endsAt);
+
+    const report = await notificationService.sendWeeklyDigest({ weekKey, eventCount });
+
+    logger.info({ weekKey, eventCount, ...report }, 'Weekly digest dispatched');
     return true;
   },
 
@@ -143,6 +177,10 @@ export const schedulerService = {
     every(env.OCCUPANCY_SAMPLE_INTERVAL_MS, 'occupancy', () => this.sampleOccupancy());
     every(60_000, 'reminders', () => this.sendDueReminders());
     every(15 * 60_000, 'digest', () => this.maybeSendDigest());
+    // Tours are appointments with people who have no app, so the reminder is
+    // email and the cadence is hourly rather than by the minute — an hour's
+    // precision on a day-before nudge is invisible to the person receiving it.
+    every(60 * 60_000, 'tour-reminders', () => this.remindUpcomingTours());
     // Hourly is ample for a horizon measured in months; it exists so an
     // open-ended weekly series keeps producing dates without anyone
     // remembering to top it up.

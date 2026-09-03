@@ -54,6 +54,24 @@ function normalise(error: unknown): AppError {
     return AppError.badRequest('Request body is not valid JSON.');
   }
 
+  /**
+   * The body exceeded a parser's `limit`.
+   *
+   * The upload routes translate this themselves, because they know which
+   * ceiling was hit and can name it. This is the catch-all for everything else
+   * — the 256kb global parser — and for anything that reaches here untranslated.
+   * Without it, body-parser's `PayloadTooLargeError` matched no branch above and
+   * became `internal_error`, so a request that was merely too big was reported
+   * as the server having broken.
+   */
+  if (
+    typeof error === 'object' &&
+    error !== null &&
+    (error as { type?: unknown }).type === 'entity.too.large'
+  ) {
+    return AppError.tooLarge('That request body is too large.');
+  }
+
   return AppError.internal(undefined, error);
 }
 

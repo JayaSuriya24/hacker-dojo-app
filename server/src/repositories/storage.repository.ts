@@ -86,6 +86,57 @@ export const storageRepository = {
     if (error) throw new Error(error.message);
   },
 
+  /**
+   * Remove every object a member owns, across both buckets.
+   *
+   * Object storage is the one place the database cascade does not reach.
+   * Deleting the auth user removes the `documents` ROWS, but the FILES they
+   * point at are `storage.objects`, which carry no foreign key to `profiles` —
+   * so without this a deleted member's student ID or DD-214 stays in the
+   * private bucket indefinitely. That is the most sensitive data this app
+   * holds, and orphaning it is the worst outcome of a deletion flow.
+   *
+   * Runs as the CALLER rather than the service role. The bucket policies key on
+   * the first path segment being the owner's uuid, which is exactly the rule
+   * that should arbitrate here — a member deleting their own folder needs no
+   * elevation, and using it would waste the protection.
+   *
+   * Reports failures instead of throwing; the caller decides. See
+   * `accountService.deleteOwnAccount` for why a storage failure does not abort.
+   */
+  async removeAllForProfile(
+    accessToken: string,
+    profileId: string,
+  ): Promise<{ removed: number; failures: string[] }> {
+    const client = userClient(accessToken);
+    let removed = 0;
+    const failures: string[] = [];
+
+    for (const bucket of [AVATAR_BUCKET, DOCUMENT_BUCKET]) {
+      const { data, error } = await client.storage.from(bucket).list(profileId, { limit: 1000 });
+
+      if (error) {
+        failures.push(`${bucket}: ${error.message}`);
+        continue;
+      }
+
+      // The folder listing is relative to the prefix, so the owner segment has
+      // to go back on before anything can be addressed.
+      const paths = (data ?? [])
+        .filter((object) => Boolean(object.name))
+        .map((object) => `${profileId}/${object.name}`);
+
+      if (paths.length === 0) continue;
+
+      const { error: removeError } = await client.storage.from(bucket).remove(paths);
+
+      if (removeError) failures.push(`${bucket}: ${removeError.message}`);
+      else removed += paths.length;
+    }
+
+    return { removed, failures };
+  },
+
   /** A short-lived URL for a private document. Minted only after RLS said yes. */
   async signDocument(path: string): Promise<string> {
     const { data, error } = await adminClient.storage

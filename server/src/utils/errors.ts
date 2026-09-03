@@ -95,6 +95,18 @@ export class AppError extends Error {
     return new AppError(404, 'not_found', message);
   }
 
+  /**
+   * The request body was larger than the parser would read.
+   *
+   * 413 with the existing `bad_request` code: the status carries the specific
+   * meaning, and the code stays inside the vocabulary the mobile client already
+   * switches on, so nothing downstream has to learn a new one. Not retryable —
+   * resending the identical body fails identically.
+   */
+  static tooLarge(message = 'That upload is too large.'): AppError {
+    return new AppError(413, 'bad_request', message);
+  }
+
   static conflict(code: ErrorCode, message: string): AppError {
     return new AppError(409, code, message);
   }

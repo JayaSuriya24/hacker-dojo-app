@@ -14,6 +14,7 @@ interface ExtraConfig {
   supabaseUrl: string;
   supabaseAnonKey: string;
   stripePublishableKey: string;
+  appleAuthEnabled: boolean;
   merchantIdentifier: string;
   variant: string;
 }
@@ -39,6 +40,13 @@ export const appConfig = {
   supabaseUrl: required('supabaseUrl', extra.supabaseUrl),
   supabaseAnonKey: required('supabaseAnonKey', extra.supabaseAnonKey),
   stripePublishableKey: extra.stripePublishableKey ?? '',
+  /**
+   * Whether Sign in with Apple is configured on the Supabase project for this
+   * build. Defaults to OFF: an Apple button that reaches an unconfigured
+   * provider fails after the member has committed to it, so the safe default is
+   * not to offer it.
+   */
+  appleAuthEnabled: extra.appleAuthEnabled === true,
   /**
    * The Apple Pay merchant id. Read from config rather than repeated as a
    * literal in the provider and the plugin, which is how those two drift.

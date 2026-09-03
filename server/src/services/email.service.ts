@@ -215,4 +215,106 @@ export const emailService = {
       text,
     });
   },
+
+  /*
+   * Tours.
+   *
+   * The visitor is the one party who cannot be reached any other way: they have
+   * no account and no app, so email is the only channel that exists for them.
+   * That is why a tour request acknowledges by mail immediately rather than
+   * relying on a steward noticing the queue — the alternative is a stranger who
+   * asked to visit and heard nothing back.
+   */
+
+  /** Sent the moment a tour is requested, before any steward has seen it. */
+  async sendTourRequested(input: {
+    to: string;
+    name: string | null;
+    when: string;
+  }): Promise<EmailResult> {
+    const text = [
+      input.name ? `Hi ${input.name},` : 'Hi,',
+      '',
+      'Thanks for asking to visit Hacker Dojo. We have your request for:',
+      '',
+      `  ${input.when}`,
+      '',
+      'A steward will confirm shortly. Nothing to do until then — if the time no',
+      'longer works, just reply to this message and we will move it.',
+      '',
+      '— Hacker Dojo',
+    ].join('\n');
+
+    return this.send({ to: input.to, subject: `Tour requested — ${input.when}`, text });
+  },
+
+  /** Sent when a steward accepts. Carries everything needed to actually turn up. */
+  async sendTourConfirmed(input: {
+    to: string;
+    name: string | null;
+    when: string;
+  }): Promise<EmailResult> {
+    const text = [
+      input.name ? `Hi ${input.name},` : 'Hi,',
+      '',
+      'Your tour is confirmed:',
+      '',
+      `  ${input.when}`,
+      '  855 Maude Ave, Mountain View, CA',
+      '',
+      'Come to the front door and someone will meet you. The whole thing takes',
+      'about thirty minutes, and there is nothing to bring or prepare.',
+      '',
+      'If you need to cancel or move it, reply to this message.',
+      '',
+      '— Hacker Dojo',
+    ].join('\n');
+
+    return this.send({ to: input.to, subject: `Tour confirmed — ${input.when}`, text });
+  },
+
+  /**
+   * Sent when a steward cancels.
+   *
+   * Offers a way back rather than closing the door: someone who asked to visit
+   * once is still someone who wants to visit.
+   */
+  async sendTourCancelled(input: {
+    to: string;
+    name: string | null;
+    when: string;
+  }): Promise<EmailResult> {
+    const text = [
+      input.name ? `Hi ${input.name},` : 'Hi,',
+      '',
+      `We are sorry — we cannot host your tour on ${input.when}.`,
+      '',
+      'Please pick another time in the app, or reply to this message and we will',
+      'find one that works.',
+      '',
+      '— Hacker Dojo',
+    ].join('\n');
+
+    return this.send({ to: input.to, subject: `Tour cancelled — ${input.when}`, text });
+  },
+
+  /** The day-before nudge, sent to the visitor. */
+  async sendTourReminder(input: {
+    to: string;
+    name: string | null;
+    when: string;
+  }): Promise<EmailResult> {
+    const text = [
+      input.name ? `Hi ${input.name},` : 'Hi,',
+      '',
+      `A reminder that your tour of Hacker Dojo is ${input.when}, at`,
+      '855 Maude Ave, Mountain View.',
+      '',
+      'Come to the front door and someone will meet you.',
+      '',
+      '— Hacker Dojo',
+    ].join('\n');
+
+    return this.send({ to: input.to, subject: `Tour tomorrow — ${input.when}`, text });
+  },
 };

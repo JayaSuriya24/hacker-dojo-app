@@ -1,6 +1,7 @@
 import { adminClient } from '../config/supabase.js';
 import { unwrap, unwrapMaybe } from '../utils/postgrest.js';
 import type {
+  Json,
   BillingPeriod,
   MembershipRow,
   MembershipStatus,
@@ -50,7 +51,7 @@ export const paymentRepository = {
           amount_cents: input.amountCents,
           idempotency_key: input.idempotencyKey,
           stripe_customer_id: input.stripeCustomerId ?? null,
-          metadata: input.metadata ?? {},
+          metadata: (input.metadata ?? {}) as Json,
         })
         .select('*')
         .single<PaymentRow>(),

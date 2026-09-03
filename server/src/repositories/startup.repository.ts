@@ -1,7 +1,7 @@
-import { adminClient } from '../config/supabase.js';
+import { adminClient, userClient } from '../config/supabase.js';
 import { unwrap, unwrapList, unwrapMaybe } from '../utils/postgrest.js';
 import { translatePostgrestError } from '../utils/postgrest.js';
-import type { StartupRow } from '../types/database.js';
+import type { Database, StartupRow } from '../types/database.js';
 
 /**
  * Startups.
@@ -29,9 +29,18 @@ export interface StartupWrite {
   sortOrder: number;
 }
 
-/** Snake-cased for the table; the service speaks camel. */
-function toRow(input: Partial<StartupWrite>): Record<string, unknown> {
-  const row: Record<string, unknown> = {};
+/**
+ * Snake-cased for the table; the service speaks camel.
+ *
+ * Typed as the table's own Update shape rather than `Record<string, unknown>`:
+ * the loose type compiled against the old hand-written schema only because its
+ * Insert and Update resolved to `never`, which accepted anything. Against the
+ * generated types a column typo is a compile error again.
+ */
+type StartupWriteRow = Database['public']['Tables']['startups']['Update'];
+
+function toRow(input: Partial<StartupWrite>): StartupWriteRow {
+  const row: StartupWriteRow = {};
   if (input.name !== undefined) row['name'] = input.name;
   if (input.slug !== undefined) row['slug'] = input.slug;
   if (input.mark !== undefined) row['mark'] = input.mark;
@@ -93,16 +102,39 @@ export const startupRepository = {
     );
   },
 
-  async create(input: StartupWrite): Promise<StartupRow> {
+  /*
+   * The writes run as the CALLER, not as the service role.
+   *
+   * `startups_insert_staff` / `_update_staff` / `_delete_staff` gate these on
+   * `is_staff()`, and the service role bypasses RLS — so on `adminClient` those
+   * three policies never ran, and `requireRole` in the route chain was the only
+   * thing standing between a routing mistake and an open write endpoint. The
+   * comment above `staffOnly` promises two independent gates; this is what makes
+   * the second one real. Reads stay on `adminClient`: `startups_select_all` is
+   * `using (true)`, so there is nothing for RLS to decide.
+   */
+  async create(accessToken: string, input: StartupWrite): Promise<StartupRow> {
     return unwrap(
-      await adminClient.from('startups').insert(toRow(input)).select('*').single<StartupRow>(),
+      await userClient(accessToken)
+        .from('startups')
+        // `toRow` yields the Update shape, where every column is optional.
+        // `create` is the one caller that always supplies a complete startup,
+        // so the Insert shape is asserted here rather than weakening the type
+        // for the three callers that legitimately send a partial row.
+        .insert(toRow(input) as Database['public']['Tables']['startups']['Insert'])
+        .select('*')
+        .single<StartupRow>(),
       'Could not create that startup.',
     );
   },
 
-  async update(id: string, patch: Partial<StartupWrite>): Promise<StartupRow | null> {
+  async update(
+    accessToken: string,
+    id: string,
+    patch: Partial<StartupWrite>,
+  ): Promise<StartupRow | null> {
     return unwrapMaybe(
-      await adminClient
+      await userClient(accessToken)
         .from('startups')
         .update(toRow(patch))
         .eq('id', id)
@@ -112,8 +144,8 @@ export const startupRepository = {
     );
   },
 
-  async remove(id: string): Promise<boolean> {
-    const { data, error } = await adminClient
+  async remove(accessToken: string, id: string): Promise<boolean> {
+    const { data, error } = await userClient(accessToken)
       .from('startups')
       .delete()
       .eq('id', id)
@@ -132,9 +164,13 @@ export const startupRepository = {
    * startup alongside its new position would silently overwrite an edit made
    * in between. Only `sort_order` is touched.
    */
-  async applyOrder(entries: Array<{ id: string; sortOrder: number }>): Promise<void> {
+  async applyOrder(
+    accessToken: string,
+    entries: Array<{ id: string; sortOrder: number }>,
+  ): Promise<void> {
+    const client = userClient(accessToken);
     for (const entry of entries) {
-      const { error } = await adminClient
+      const { error } = await client
         .from('startups')
         .update({ sort_order: entry.sortOrder })
         .eq('id', entry.id);

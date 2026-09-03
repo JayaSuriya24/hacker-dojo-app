@@ -1,9 +1,11 @@
 import { staffRepository } from '../repositories/staff.repository.js';
 import { eventApprovalService, type ApprovalResult } from './eventApproval.service.js';
 import { logger } from '../config/logger.js';
-import { formatDojoRange } from '../utils/time.js';
+import { emailService } from './email.service.js';
+import { profileRepository } from '../repositories/profile.repository.js';
+import { formatDojoInstant, formatDojoRange } from '../utils/time.js';
 import type { AuthenticatedUser } from '../types/http.js';
-import type { ApplicationStatus, TourStatus } from '../types/database.js';
+import type { ApplicationStatus, TourRow, TourStatus } from '../types/database.js';
 
 export interface QueueItemView {
   kind: 'tour' | 'event_request' | 'program_application' | 'document';
@@ -83,9 +85,48 @@ export const staffService = {
     }));
   },
 
+  /**
+   * Record a steward's decision and tell the visitor.
+   *
+   * Only `confirmed` and `cancelled` are worth an email: `attended` is the
+   * steward closing the loop after the fact, and `requested` is where the tour
+   * already was. Mail is fire-and-forget for the same reason the booking itself
+   * is — the decision is recorded either way, and a provider outage must not
+   * un-decide it.
+   */
   async setTourStatus(user: AuthenticatedUser, id: string, status: TourStatus) {
     const row = await staffRepository.setTourStatus(user.accessToken, id, status);
+
+    if (status === 'confirmed' || status === 'cancelled') {
+      void this.notifyTourDecision(row, status).catch((error: unknown) =>
+        logger.error({ err: error, tourId: row.id, status }, 'Could not tell a visitor'),
+      );
+    }
+
     return { id: row.id, status: row.status };
+  },
+
+  /**
+   * The visitor's address, which is on the row for a guest and on the profile
+   * for a member who booked while signed in.
+   */
+  async notifyTourDecision(row: TourRow, status: 'confirmed' | 'cancelled'): Promise<void> {
+    let recipient = row.guest_email;
+    if (!recipient && row.profile_id) {
+      const profile = await profileRepository.findById(row.profile_id);
+      recipient = profile?.email ?? null;
+    }
+    if (!recipient) {
+      logger.warn({ tourId: row.id }, 'Tour decided but there is no address to tell anyone at');
+      return;
+    }
+
+    const when = formatDojoInstant(row.scheduled_for);
+    const payload = { to: recipient, name: row.guest_name, when };
+
+    await (status === 'confirmed'
+      ? emailService.sendTourConfirmed(payload)
+      : emailService.sendTourCancelled(payload));
   },
 
   /**

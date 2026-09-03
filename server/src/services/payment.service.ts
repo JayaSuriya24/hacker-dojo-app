@@ -1,5 +1,7 @@
-import type Stripe from 'stripe';
-import { stripe, STRIPE_API_VERSION } from '../config/stripe.js';
+// A value import, not `import type`: `Stripe.errors` is needed below to tell a
+// subscription that Stripe has never heard of from a transport failure.
+import Stripe from 'stripe';
+import { stripe, STRIPE_API_VERSION, isStripeConfigured } from '../config/stripe.js';
 import { env } from '../config/env.js';
 import { logger } from '../config/logger.js';
 import { paymentRepository } from '../repositories/payment.repository.js';
@@ -26,9 +28,210 @@ export interface PaymentSheetParams {
   subscriptionId: string | null;
 }
 
+/**
+ * What a plan change produced when no payment sheet is involved.
+ *
+ * A member who already has a live subscription is not buying a second one —
+ * their existing subscription is re-priced in place — so there is no
+ * PaymentIntent to confirm and nothing for the Stripe sheet to do.
+ */
+export interface MembershipSwitch {
+  /** `switched` = the price changed; `unchanged` = they already had this plan. */
+  outcome: 'switched' | 'unchanged';
+  /** Always the SAME subscription id they had before. */
+  subscriptionId: string;
+  planId: string;
+  planName: string;
+  period: BillingPeriod;
+  amountCents: number;
+}
+
+/**
+ * Starting a membership and changing one are different operations with
+ * different results, so the endpoint says which happened rather than returning
+ * a payment sheet with an empty client secret and leaving the client to infer
+ * it. The client switches on `outcome`.
+ */
+export type MembershipIntentResult =
+  ({ outcome: 'checkout' } & PaymentSheetParams) | MembershipSwitch;
+
 export interface BillingPortalSession {
   url: string;
   returnUrl: string;
+}
+
+/**
+ * Subscription statuses that still represent a live billing relationship, and
+ * can therefore be re-priced in place.
+ *
+ * Anything else — `canceled`, `incomplete_expired`, `unpaid`, `paused` — is not
+ * something Stripe will keep billing, so re-pricing it would leave the member
+ * with no active subscription at all. Those fall through to a fresh one.
+ */
+const SWITCHABLE_STATUSES: ReadonlySet<Stripe.Subscription.Status> = new Set([
+  'active',
+  'trialing',
+  'past_due',
+]);
+
+/**
+ * Re-price the member's existing subscription onto a new plan.
+ *
+ * This is the whole of the double-billing fix. The previous implementation
+ * called `subscriptions.create` unconditionally, so "Switch to Hive" left the
+ * member with a live Standard subscription AND a live Hive one — two charges a
+ * month — while the local `memberships` row was quietly marked `canceled`. That
+ * local write fooled nobody: Stripe kept billing both, and the next
+ * `customer.subscription.updated` for the old subscription flipped its row back
+ * to `active`, colliding with `memberships_one_active_per_profile` and wedging
+ * the webhook into a retry loop it could never escape.
+ *
+ * Nothing local is written here. The `customer.subscription.updated` event that
+ * Stripe emits is what moves the membership, through exactly the same
+ * `syncSubscription` path every other subscription change already takes — so a
+ * failed update leaves the member on the plan they were already paying for,
+ * rather than on a plan the database believes they bought.
+ *
+ * Returns `null` when there is no usable subscription to re-price, which the
+ * caller reads as "fall through and start a fresh one".
+ */
+async function switchExistingSubscription(input: {
+  subscriptionId: string;
+  plan: PlanRow;
+  period: BillingPeriod;
+  priceId: string;
+  amountCents: number;
+  profileId: string;
+  idempotencyKey: string;
+}): Promise<MembershipSwitch | null> {
+  let subscription: Stripe.Subscription;
+
+  try {
+    subscription = await stripe.subscriptions.retrieve(input.subscriptionId);
+  } catch (error) {
+    // The id we hold is not a subscription Stripe has. Deleted from the
+    // dashboard, or belonging to a different account after a key rotation.
+    // Starting a fresh subscription cannot double-bill, because there is
+    // demonstrably nothing on the other side still billing.
+    if (
+      error instanceof Stripe.errors.StripeInvalidRequestError &&
+      error.code === 'resource_missing'
+    ) {
+      logger.warn(
+        { subscriptionId: input.subscriptionId, profileId: input.profileId },
+        'Recorded subscription does not exist at Stripe — starting a new one',
+      );
+      return null;
+    }
+    throw error;
+  }
+
+  if (!SWITCHABLE_STATUSES.has(subscription.status)) {
+    logger.info(
+      { subscriptionId: subscription.id, status: subscription.status },
+      'Existing subscription is not live — starting a new one',
+    );
+    return null;
+  }
+
+  const items = subscription.items?.data ?? [];
+
+  /*
+   * More than one line on the subscription is an ambiguity this code refuses to
+   * guess at. Everything this API creates is single-item, so a multi-item
+   * subscription came from somewhere else, and picking one line to re-price
+   * could silently leave the member paying for both the old plan and the new.
+   * Better a member who has to talk to a steward than one who is billed twice.
+   */
+  if (items.length > 1) {
+    logger.error(
+      { subscriptionId: subscription.id, itemCount: items.length },
+      'Refusing to switch a subscription with multiple items',
+    );
+    throw AppError.conflict(
+      'conflict',
+      'Your membership has more than one billing line, so we cannot change it automatically. Manage it from Manage billing, or talk to a steward.',
+    );
+  }
+
+  const item = items[0];
+  if (!item) {
+    logger.error({ subscriptionId: subscription.id }, 'Subscription has no items to re-price');
+    throw AppError.conflict(
+      'conflict',
+      'Your membership is missing its billing line. Talk to a steward and they will put it right.',
+    );
+  }
+
+  // Already on the requested plan. Do not touch Stripe at all — an update here
+  // would be a no-op that still emits an event and could still produce a
+  // proration line for a change nobody made.
+  if (item.price?.id === input.priceId) {
+    return {
+      outcome: 'unchanged',
+      subscriptionId: subscription.id,
+      planId: input.plan.id,
+      planName: input.plan.name,
+      period: input.period,
+      amountCents: input.amountCents,
+    };
+  }
+
+  const updated = await stripe.subscriptions.update(
+    subscription.id,
+    {
+      // Addressing the EXISTING item by id is what makes this a re-price rather
+      // than an addition. Omitting the id would append a second line and bill
+      // for both plans — the same double charge by a different route.
+      items: [{ id: item.id, price: input.priceId }],
+      /*
+       * `create_prorations` credits the unused remainder of the old plan and
+       * charges the prorated new one, both settled on the next invoice.
+       *
+       * Deliberately not `always_invoice`, which bills the difference
+       * immediately: that needs a confirmed PaymentIntent, and this path has no
+       * payment sheet open to satisfy an SCA challenge with. An upgrade that
+       * silently fails an off-session charge is worse than one that appears on
+       * the next invoice.
+       */
+      proration_behavior: 'create_prorations',
+      /*
+       * `syncSubscription` reads `planId` and `period` from metadata BEFORE
+       * falling back to a Price lookup, so stale metadata here would move the
+       * member's price while leaving the membership row on the old plan. The
+       * rest is preserved rather than replaced.
+       */
+      metadata: {
+        ...subscription.metadata,
+        profileId: input.profileId,
+        planId: input.plan.id,
+        period: input.period,
+        kind: 'membership',
+      },
+    },
+    // A retried tap re-sends the same update rather than applying a second
+    // proration.
+    { idempotencyKey: `switch_${input.idempotencyKey}` },
+  );
+
+  logger.info(
+    {
+      subscriptionId: updated.id,
+      profileId: input.profileId,
+      planId: input.plan.id,
+      priceId: input.priceId,
+    },
+    'Switched an existing subscription to a new plan',
+  );
+
+  return {
+    outcome: 'switched',
+    subscriptionId: updated.id,
+    planId: input.plan.id,
+    planName: input.plan.name,
+    period: input.period,
+    amountCents: input.amountCents,
+  };
 }
 
 /**
@@ -121,7 +324,7 @@ export const paymentService = {
   async createMembershipIntent(
     user: AuthenticatedUser,
     input: { planId: string; period: BillingPeriod; idempotencyKey: string },
-  ): Promise<PaymentSheetParams> {
+  ): Promise<MembershipIntentResult> {
     const plan = await profileRepository.planById(input.planId);
     if (!plan || !plan.active) throw AppError.notFound('That plan is not available.');
 
@@ -132,6 +335,33 @@ export const paymentService = {
     }
 
     const priceId = priceIdFor(plan, input.period);
+
+    /*
+     * A member who already subscribes is CHANGING a plan, not buying a second
+     * one. This branch runs before anything is created — no customer, no
+     * payment row, no subscription — so the expensive, duplicating path is
+     * never entered for someone who already has a live subscription.
+     *
+     * `membership()` returns the caller's active/trialing/past_due row, which
+     * is exactly the set whose subscription is still billing.
+     */
+    const existing = await profileRepository.membership(user.accessToken, user.id);
+
+    if (existing?.stripe_subscription_id) {
+      const switched = await switchExistingSubscription({
+        subscriptionId: existing.stripe_subscription_id,
+        plan,
+        period: input.period,
+        priceId,
+        amountCents,
+        profileId: user.id,
+        idempotencyKey: input.idempotencyKey,
+      });
+
+      // `null` means there was nothing live to re-price — Stripe has no such
+      // subscription, or it is already dead — so a fresh one is safe.
+      if (switched) return switched;
+    }
 
     // A retried tap replays the stored intent rather than opening a second
     // subscription. Stripe's own idempotency key covers the call below; this
@@ -146,6 +376,7 @@ export const paymentService = {
       );
 
       return {
+        outcome: 'checkout',
         paymentIntentClientSecret: intent.client_secret ?? '',
         setupIntentClientSecret: null,
         ephemeralKeySecret: ephemeralKey.secret ?? '',
@@ -229,6 +460,7 @@ export const paymentService = {
     );
 
     return {
+      outcome: 'checkout',
       paymentIntentClientSecret: clientSecret ?? '',
       setupIntentClientSecret: setupSecret,
       ephemeralKeySecret: ephemeralKey.secret ?? '',
@@ -237,6 +469,79 @@ export const paymentService = {
       paymentId: payment.id,
       subscriptionId: subscription.id,
     };
+  },
+
+  /**
+   * Stop the member's billing, because their account is being deleted.
+   *
+   * Ordered FIRST in the deletion flow and allowed to abort it: money is the
+   * one part of this that cannot be swept up afterwards. A member whose rows
+   * are gone but whose card is still charged monthly has no account left to
+   * sign into and complain with, and no subscription visible anywhere in the
+   * app — so a failure here has to stop the deletion rather than be logged.
+   *
+   * Cancels outright rather than at period end. Someone deleting their account
+   * is leaving now; letting the subscription run to the end of the period would
+   * bill them again for a membership that no longer has a profile attached.
+   */
+  async cancelSubscriptionForAccountDeletion(
+    user: AuthenticatedUser,
+  ): Promise<{ subscriptionId: string | null; wasAlreadyInactive: boolean }> {
+    const membership = await profileRepository.membership(user.accessToken, user.id);
+    const subscriptionId = membership?.stripe_subscription_id ?? null;
+
+    // Nothing to cancel. A member who never subscribed, or whose membership was
+    // only ever a local row, deletes cleanly.
+    if (!subscriptionId) return { subscriptionId: null, wasAlreadyInactive: true };
+
+    /*
+     * There is a subscription id on file and no way to reach Stripe to act on
+     * it. Refusing is the only honest answer — reporting the account deleted
+     * while billing continues is precisely the outcome this method exists to
+     * prevent.
+     */
+    if (!isStripeConfigured) {
+      logger.error(
+        { subscriptionId, profileId: user.id },
+        'Cannot delete account: Stripe is not configured and a subscription is on file',
+      );
+      throw AppError.upstream(
+        'We could not reach billing to cancel your membership, so nothing was deleted. Try again shortly, or email staff@hackerdojo.org.',
+      );
+    }
+
+    let subscription: Stripe.Subscription;
+    try {
+      subscription = await stripe.subscriptions.retrieve(subscriptionId);
+    } catch (error) {
+      // Stripe has no such subscription, so there is nothing left billing.
+      if (
+        error instanceof Stripe.errors.StripeInvalidRequestError &&
+        error.code === 'resource_missing'
+      ) {
+        logger.warn(
+          { subscriptionId, profileId: user.id },
+          'Subscription on file does not exist at Stripe — nothing to cancel',
+        );
+        return { subscriptionId, wasAlreadyInactive: true };
+      }
+      throw error;
+    }
+
+    // Already finished. Cancelling again would be an error from Stripe, not a
+    // success, so this is checked rather than caught.
+    if (subscription.status === 'canceled' || subscription.status === 'incomplete_expired') {
+      return { subscriptionId, wasAlreadyInactive: true };
+    }
+
+    await stripe.subscriptions.cancel(subscriptionId);
+
+    logger.info(
+      { subscriptionId, profileId: user.id },
+      'Cancelled subscription ahead of account deletion',
+    );
+
+    return { subscriptionId, wasAlreadyInactive: false };
   },
 
   /**

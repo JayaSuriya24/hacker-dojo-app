@@ -23,6 +23,13 @@ import { logger } from './logger';
 const CHUNK_SIZE = 1800;
 const isWeb = Platform.OS === 'web';
 
+// The downgrade the header promises is announced here, once, rather than on
+// every read: a value stored on web is NOT encrypted, and a silent fallback
+// would let that pass for Keychain storage.
+if (isWeb) {
+  logger.warn('SecureStore has no web implementation — falling back to unencrypted AsyncStorage.');
+}
+
 const options: SecureStore.SecureStoreOptions = {
   // Available after the first unlock, so a background refresh can still read
   // the session, but not while the device has never been unlocked since boot.
@@ -60,12 +67,11 @@ export const secureStorage = {
       const head = await getRaw(key);
       if (head === null) return null;
 
-      // A chunked value stores its part count under the base key.
-      const chunkCount = Number(head);
-      if (!Number.isInteger(chunkCount) || chunkCount <= 0 || !head.startsWith('__chunks__')) {
-        return head.startsWith('__chunks__') ? null : head;
-      }
-      return head;
+      // A chunked value stores the marker under the base key and the parts
+      // beside it. Reassembling them is the Supabase adapter's job, so this
+      // plain reader reports a chunked value as absent rather than handing
+      // back a marker that is not the stored value.
+      return head.startsWith('__chunks__') ? null : head;
     } catch (error) {
       logger.warn('Secure storage read failed', { key, error });
       return null;
@@ -112,8 +118,8 @@ export const secureStorage = {
 
 /**
  * The adapter shape Supabase expects. Reassembles chunked values on read,
- * which the plain `secureStorage.getItem` above deliberately does not do
- * (it returns the marker so callers can tell the difference).
+ * which the plain `secureStorage.getItem` above deliberately does not do —
+ * it reports them as absent instead.
  */
 export const supabaseSecureStorageAdapter = {
   async getItem(key: string): Promise<string | null> {

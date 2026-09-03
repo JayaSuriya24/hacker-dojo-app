@@ -3,6 +3,7 @@ import * as AppleAuthentication from 'expo-apple-authentication';
 import * as WebBrowser from 'expo-web-browser';
 import * as Linking from 'expo-linking';
 import { supabase } from '~/services/supabase';
+import { api } from '~/services/api/client';
 import { logger } from '~/services/logger';
 import { ApiError, type ApiErrorCode } from '~/services/api/errors';
 
@@ -383,6 +384,8 @@ export const authService = {
         token: credential.identityToken,
       });
       if (error) throw toApiError(error, 'We could not sign you in with Apple.');
+
+      await this.adoptAppleName(credential.fullName);
     } catch (error) {
       // Apple reports a user-cancelled sheet as an error; it is not one.
       if (
@@ -393,6 +396,45 @@ export const authService = {
         return;
       }
       throw error;
+    }
+  },
+
+  /**
+   * Record the member's real name, on the one occasion Apple sends it.
+   *
+   * Apple returns `fullName` ONLY on the very first authorisation of an app —
+   * every sign-in after that has it null, and it is never in the identity token
+   * at all. So Supabase has no name to put in `raw_user_meta_data`, and the
+   * `handle_new_user` trigger falls back to the local part of the email
+   * address. With Hide My Email that produces a directory card reading
+   * something like `a1b2c3d4e5`, permanently, with no way to recover the real
+   * name later.
+   *
+   * Best effort on purpose: this runs after the session exists, so a failure
+   * costs a display name, not a sign-in. The member can always edit it in
+   * Settings, which is exactly the fallback if this does not land.
+   *
+   * Goes through the app's own API rather than writing `profiles` directly —
+   * the mobile client uses Supabase for authentication and nothing else.
+   */
+  async adoptAppleName(fullName: AppleAuthentication.AppleAuthenticationFullName | null) {
+    const name = [fullName?.givenName, fullName?.familyName]
+      .filter((part): part is string => Boolean(part && part.trim()))
+      .join(' ')
+      .trim();
+
+    // `full_name` must be 2–120 characters to satisfy the column's check
+    // constraint; anything shorter is not a name worth overwriting a fallback
+    // with, and would be rejected by the API anyway.
+    if (name.length < 2) return;
+
+    try {
+      // Keep the auth metadata in step too, so a future trigger run or an
+      // export sees the same name the profile carries.
+      await supabase.auth.updateUser({ data: { full_name: name } });
+      await api.patch('/me', { full_name: name.slice(0, 120) });
+    } catch (error) {
+      logger.warn('Could not record the name Apple provided', { error });
     }
   },
 

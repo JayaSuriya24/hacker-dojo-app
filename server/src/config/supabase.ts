@@ -1,5 +1,6 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { env } from './env.js';
+import type { Database } from '../types/database.js';
 
 /**
  * Two clients, two very different trust levels.
@@ -18,7 +19,7 @@ const commonOptions = {
   auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
 } as const;
 
-export const adminClient: SupabaseClient = createClient(
+export const adminClient: SupabaseClient<Database> = createClient<Database>(
   env.SUPABASE_URL,
   env.SUPABASE_SERVICE_ROLE_KEY,
   {
@@ -32,8 +33,8 @@ export const adminClient: SupabaseClient = createClient(
  * around fetch, not a connection pool — so building one per request is correct
  * and avoids any chance of one request inheriting another's identity.
  */
-export function userClient(accessToken: string): SupabaseClient {
-  return createClient(env.SUPABASE_URL, env.SUPABASE_ANON_KEY, {
+export function userClient(accessToken: string): SupabaseClient<Database> {
+  return createClient<Database>(env.SUPABASE_URL, env.SUPABASE_ANON_KEY, {
     ...commonOptions,
     global: {
       headers: {

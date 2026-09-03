@@ -6,6 +6,7 @@ import type {
   EventRequestRow,
   OccupancyRow,
   StaffQueueRow,
+  TourRow,
   TourStatus,
 } from '../types/database.js';
 
@@ -41,18 +42,21 @@ export const staffRepository = {
     return unwrapList(await request.returns<StaffQueueRow[]>(), 'Could not load the queue.');
   },
 
-  async setTourStatus(
-    accessToken: string,
-    id: string,
-    status: TourStatus,
-  ): Promise<{ id: string; status: TourStatus }> {
+  /**
+   * Returns the whole row, not just the new status.
+   *
+   * The caller has to tell the visitor what happened, and the visitor's address
+   * and appointment live on this row. Selecting them here costs nothing and
+   * saves a second read against a row we have just written.
+   */
+  async setTourStatus(accessToken: string, id: string, status: TourStatus): Promise<TourRow> {
     return unwrap(
       await userClient(accessToken)
         .from('tours')
         .update({ status })
         .eq('id', id)
-        .select('id, status')
-        .single<{ id: string; status: TourStatus }>(),
+        .select('*')
+        .single<TourRow>(),
       'Could not update that tour.',
     );
   },

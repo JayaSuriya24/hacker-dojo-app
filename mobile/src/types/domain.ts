@@ -294,6 +294,8 @@ export interface NotificationPreferences {
 }
 
 export interface PaymentSheetParams {
+  /** Discriminator: this response wants the Stripe sheet opened. */
+  outcome: 'checkout';
   paymentIntentClientSecret: string;
   /** Present when the subscription needs a payment method rather than a charge. */
   setupIntentClientSecret: string | null;
@@ -303,6 +305,24 @@ export interface PaymentSheetParams {
   paymentId: string;
   subscriptionId: string | null;
 }
+
+/**
+ * A plan change on a subscription the member already had.
+ *
+ * No sheet is opened for these: the existing subscription was re-priced in
+ * place, so there is no new charge to authorise. Opening the sheet on an empty
+ * client secret is what a single `PaymentSheetParams` shape would have forced.
+ */
+export interface MembershipSwitchResult {
+  outcome: 'switched' | 'unchanged';
+  subscriptionId: string;
+  planId: string;
+  planName: string;
+  period: BillingPeriod;
+  amountCents: number;
+}
+
+export type MembershipIntentResult = PaymentSheetParams | MembershipSwitchResult;
 
 export interface BillingPortalSession {
   url: string;
@@ -403,4 +423,20 @@ export interface ContentBlock {
   value: string | null;
   sortOrder: number;
   active: boolean;
+}
+
+/**
+ * What the server did while deleting an account.
+ *
+ * Returned so the client can be honest about the outcome rather than assuming
+ * it: `storageFailures` is non-empty when the account is gone but an object
+ * could not be cleared, which is a support case rather than a silent success.
+ */
+export interface AccountDeletionResult {
+  /** The Stripe subscription that was cancelled, or null if there was none. */
+  subscriptionId: string | null;
+  storageObjectsRemoved: number;
+  /** Tours cancelled: they cannot outlive the profile. */
+  toursRemoved: number;
+  storageFailures: string[];
 }

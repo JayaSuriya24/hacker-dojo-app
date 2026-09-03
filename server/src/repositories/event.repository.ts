@@ -3,6 +3,7 @@ import { unwrap, unwrapList, unwrapMaybe } from '../utils/postgrest.js';
 import type {
   EventCategory,
   EventFeedRow,
+  EventRepeatMode,
   EventRequestRow,
   EventRsvpRow,
   EventSeriesRow,
@@ -15,6 +16,23 @@ export interface EventQuery {
   offset: number;
 }
 
+/**
+ * A host's event request, including WHEN it runs and whether it repeats.
+ *
+ * The scheduling half of this interface used to be absent, and the insert below
+ * mapped seven columns while the validator accepted thirteen. `hostEventSchema`
+ * parsed the host's time, duration and repeat rule, the controller passed the
+ * whole body through, and the six scheduling fields were then silently dropped
+ * on the floor — so every request landed on the DEFAULTS the migration gives
+ * those columns (`preferred_time '18:00'`, `duration_minutes 120`,
+ * `repeat_mode 'once'`).
+ *
+ * The consequence was not a missing field on a form. `eventApprovalService`
+ * branches on `repeat_mode` to decide whether to create an `event_series`, so a
+ * member who asked for "every Saturday, 10:00, three hours" got a ONE-OFF event
+ * at 6pm for two hours, and the entire `event_series` path was unreachable from
+ * the product.
+ */
 export interface CreateEventRequestInput {
   profileId: string;
   title: string;
@@ -23,6 +41,18 @@ export interface CreateEventRequestInput {
   preferredDate: string;
   preferredRoom: string;
   notes?: string | undefined;
+
+  /** Local wall-clock start at the Dojo, `HH:MM`. A date alone builds no event. */
+  preferredTime: string;
+  durationMinutes: number;
+
+  /** `once` = a single event; `weekly` = an `event_series` on `repeatWeekdays`. */
+  repeatMode: EventRepeatMode;
+  /** Postgres `dow`: 0 = Sunday … 6 = Saturday. Empty for a one-off. */
+  repeatWeekdays: number[];
+  repeatIntervalWeeks: number;
+  /** Open-ended when absent. */
+  repeatUntil?: string | undefined;
 }
 
 export const eventRepository = {
@@ -71,6 +101,44 @@ export const eventRepository = {
     if (!accessToken) request = request.eq('members_only', false);
 
     return unwrapMaybe(await request.maybeSingle<EventFeedRow>(), 'Could not load that event.');
+  },
+
+  /**
+   * How many events fall inside a window — the number the weekly digest quotes.
+   *
+   * Counted in POSTGRES, not in JavaScript: `head: true` asks PostgREST for the
+   * count alone and returns no rows at all, so nothing is paged into memory and
+   * the `max_rows` ceiling on returned rows is not involved. One query, no
+   * fan-out per event.
+   *
+   * Reads `event_feed` rather than `events` on purpose. That view is what the
+   * Events tab renders, and it already carries the `status = 'published'`
+   * filter — so a draft, a `pending_review` submission or a CANCELLED date is
+   * excluded here for exactly the same reason it is absent from the tab, rather
+   * than by a second list of statuses that could drift from it.
+   *
+   * Occurrences, not series. A recurring meetup is real rows in `events`, one
+   * per date, each with its own RSVP list and capacity — that is the schema's
+   * explicit design and what a member scrolls through — so eight Saturdays
+   * count as eight events, which is what the member sees on tapping through.
+   *
+   * The service role bypasses RLS, so `members_only` has to be restated here
+   * exactly as `list` and `findById` restate it for their anonymous path. The
+   * digest is one message with one number sent to many people; counting only
+   * the events EVERY recipient can see keeps it true for all of them, including
+   * a lapsed member whose digest preference is still switched on.
+   */
+  async countPublishedBetween(startsAt: string, endsAt: string): Promise<number> {
+    const { count, error } = await adminClient
+      .from('event_feed')
+      .select('id', { count: 'exact', head: true })
+      .eq('members_only', false)
+      // Half-open: an event at exactly `endsAt` belongs to the next window.
+      .gte('starts_at', startsAt)
+      .lt('starts_at', endsAt);
+
+    if (error) throw new Error(error.message);
+    return count ?? 0;
   },
 
   /** The rule behind a recurring event. Null for a one-off. */
@@ -193,6 +261,17 @@ export const eventRepository = {
           preferred_date: input.preferredDate,
           preferred_room: input.preferredRoom,
           notes: input.notes ?? null,
+
+          // The scheduling half. Written explicitly rather than spread, so a
+          // column added to the table is a compile error here rather than
+          // another field that quietly falls back to its default.
+          preferred_time: input.preferredTime,
+          duration_minutes: input.durationMinutes,
+          repeat_mode: input.repeatMode,
+          repeat_weekdays: input.repeatWeekdays,
+          repeat_interval_weeks: input.repeatIntervalWeeks,
+          // Nullable in the column: no end date means the series is open-ended.
+          repeat_until: input.repeatUntil ?? null,
         })
         .select('*')
         .single<EventRequestRow>(),

@@ -44,6 +44,21 @@ refresh_token_reuse_interval = 10
 enable_signup = true
 enable_anonymous_sign_ins = false
 
+# Password policy. Supabase enforces this server-side; the mobile Zod schema
+# (`passwordSchema` in features/auth/validation/auth.schemas.ts) mirrors it so
+# the user gets the error before the round trip, never instead of it.
+#
+# These are plain keys on `[auth]` rather than a `[auth.password]` sub-table:
+# the CLI moved them, and the old shape is now rejected outright rather than
+# ignored ("'auth' has invalid keys: password"), which took `db reset` down
+# before it reached a single migration.
+#
+# `password_requirements` is an enum where the old `required_characters` was a
+# colon-separated set of character classes. The previous value listed lowercase,
+# uppercase and digits, which is exactly `lower_upper_letters_digits`.
+minimum_password_length = 8
+password_requirements = "lower_upper_letters_digits"
+
 [auth.email]
 enable_signup = true
 double_confirm_changes = true
@@ -92,18 +107,17 @@ enable_signup = false
 enable_confirmations = true
 max_frequency = "60s"
 
-# Password policy. Supabase enforces this server-side; the mobile Zod schema
-# mirrors it so the user gets the error before the round trip, never instead of it.
-[auth.password]
-min_length = 8
-required_characters = "abcdefghijklmnopqrstuvwxyz:ABCDEFGHIJKLMNOPQRSTUVWXYZ:0123456789"
-
 [auth.rate_limit]
 email_sent = 10
 sms_sent = 10
 sign_in_sign_ups = 30
 token_refresh = 150
-otp = 30
+# OTP / magic-link verifications per 5 minutes per IP. Previously written as
+# `otp`, which this CLI rejects ("'auth.rate_limit' has invalid keys: otp").
+# `token_verifications` is the same limiter under its current name — it is what
+# bounds `verifyOtp` in auth.service.ts, so the ceiling is carried over
+# unchanged rather than re-tuned.
+token_verifications = 30
 
 [auth.external.google]
 enabled = true
