@@ -150,6 +150,27 @@ export const contentRepository = {
    * Tours accept anonymous bookings — a prospective member has no account yet,
    * and requiring one before they can visit is exactly backwards.
    */
+  /**
+   * Confirmed tours starting inside the window, that have not been reminded.
+   *
+   * Keyed off `status = 'confirmed'` rather than every row: reminding somebody
+   * about a tour no steward has accepted would be promising something the Dojo
+   * has not agreed to.
+   */
+  async confirmedToursBetween(fromIso: string, toIso: string): Promise<TourRow[]> {
+    return unwrapList(
+      await adminClient
+        .from('tours')
+        .select('*')
+        .eq('status', 'confirmed')
+        .gte('scheduled_for', fromIso)
+        .lt('scheduled_for', toIso)
+        .order('scheduled_for', { ascending: true })
+        .returns<TourRow[]>(),
+      'Could not load upcoming tours.',
+    );
+  },
+
   async createTour(
     accessToken: string | null,
     input: {

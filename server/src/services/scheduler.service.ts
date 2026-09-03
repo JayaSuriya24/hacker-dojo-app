@@ -80,6 +80,23 @@ export const schedulerService = {
     return zones;
   },
 
+  /**
+   * Email tomorrow's confirmed tours.
+   *
+   * The window is the 24-to-25-hour band ahead, which one hourly tick covers
+   * exactly once — so a tour is reminded a single time without needing a
+   * "reminded_at" column to track it.
+   */
+  async remindUpcomingTours(): Promise<number> {
+    const now = Date.now();
+    const from = new Date(now + 24 * 60 * 60_000).toISOString();
+    const to = new Date(now + 25 * 60 * 60_000).toISOString();
+
+    const sent = await notificationService.sendTourReminders(from, to);
+    if (sent > 0) logger.info({ sent }, 'Reminded upcoming tours');
+    return sent;
+  },
+
   async sendDueReminders(): Promise<void> {
     await notificationService.sendBookingReminders(BOOKING_REMINDER_MINUTES);
     await notificationService.sendMembershipReminders(MEMBERSHIP_REMINDER_DAYS);
@@ -160,6 +177,10 @@ export const schedulerService = {
     every(env.OCCUPANCY_SAMPLE_INTERVAL_MS, 'occupancy', () => this.sampleOccupancy());
     every(60_000, 'reminders', () => this.sendDueReminders());
     every(15 * 60_000, 'digest', () => this.maybeSendDigest());
+    // Tours are appointments with people who have no app, so the reminder is
+    // email and the cadence is hourly rather than by the minute — an hour's
+    // precision on a day-before nudge is invisible to the person receiving it.
+    every(60 * 60_000, 'tour-reminders', () => this.remindUpcomingTours());
     // Hourly is ample for a horizon measured in months; it exists so an
     // open-ended weekly series keeps producing dates without anyone
     // remembering to top it up.

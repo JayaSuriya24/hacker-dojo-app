@@ -171,6 +171,31 @@ export function formatDojoRange(startsAt: string, endsAt: string): string {
 }
 
 /**
+ * One instant, spelled out: `Thu, Sep 4 · 2:30 PM`.
+ *
+ * `formatDojoRange` needs a start and an end, which a tour does not have — it
+ * is a single appointment, not a reservation window.
+ */
+export function formatDojoInstant(at: string): string {
+  const when = new Date(at);
+
+  const day = new Intl.DateTimeFormat('en-US', {
+    timeZone: DOJO_TIMEZONE,
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+  }).format(when);
+
+  const time = new Intl.DateTimeFormat('en-US', {
+    timeZone: DOJO_TIMEZONE,
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(when);
+
+  return `${day} · ${time}`;
+}
+
+/**
  * Just the clock window: `11:00 AM – 12:00 PM`.
  *
  * `formatDojoRange` leads with the weekday and date, which is right for a

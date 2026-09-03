@@ -12,7 +12,22 @@ vi.mock('../../repositories/notification.repository.js', () => ({
     clearPushToken: vi.fn(),
     bookingReminderPages: vi.fn(),
     membershipReminderPages: vi.fn(),
+    staffPushTargets: vi.fn(),
   },
+}));
+
+/*
+ * `sendTourReminders` reaches these two, and both import the Supabase client at
+ * module scope. Without a stub the import alone constructs a real client from a
+ * mocked env that has no project URL, and the whole file fails to load before a
+ * single test runs.
+ */
+vi.mock('../../repositories/content.repository.js', () => ({
+  contentRepository: { confirmedToursBetween: vi.fn() },
+}));
+
+vi.mock('../../repositories/profile.repository.js', () => ({
+  profileRepository: { findById: vi.fn() },
 }));
 
 /** Turn fixed pages into the async generator the service now consumes. */

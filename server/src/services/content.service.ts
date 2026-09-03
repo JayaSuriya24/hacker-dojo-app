@@ -3,6 +3,10 @@ import {
   contentBlockRepository,
   siteSettingRepository,
 } from '../repositories/settings.repository.js';
+import { emailService } from './email.service.js';
+import { notificationService } from './notification.service.js';
+import { logger } from '../config/logger.js';
+import { formatDojoInstant } from '../utils/time.js';
 import { AppError } from '../utils/errors.js';
 import type { AuthenticatedUser } from '../types/http.js';
 import type { ContentBlockRow } from '../types/database.js';
@@ -177,6 +181,36 @@ export const contentService = {
       guestEmail: input.guestEmail,
       scheduledFor: when.toISOString(),
     });
+
+    /*
+     * Tell both sides, and let neither failure lose the tour.
+     *
+     * The row is the booking; a mail provider being down does not un-book it.
+     * Same reasoning as accepting an event request — the record stands, and a
+     * notification that did not go out is a problem to fix rather than a reason
+     * to reject something the visitor has already been told succeeded.
+     */
+    const whenFormatted = formatDojoInstant(row.scheduled_for);
+    const recipient = input.guestEmail ?? user?.email;
+    const visitorName = input.guestName ?? null;
+
+    if (recipient) {
+      void emailService
+        .sendTourRequested({ to: recipient, name: visitorName, when: whenFormatted })
+        .catch((error: unknown) =>
+          logger.error({ err: error, tourId: row.id }, 'Could not acknowledge a tour request'),
+        );
+    }
+
+    void notificationService
+      .notifyStaffOfTourRequest({
+        tourId: row.id,
+        when: whenFormatted,
+        who: visitorName ?? recipient ?? 'A visitor',
+      })
+      .catch((error: unknown) =>
+        logger.error({ err: error, tourId: row.id }, 'Could not notify staff of a tour request'),
+      );
 
     return { id: row.id, scheduledFor: row.scheduled_for, status: row.status };
   },

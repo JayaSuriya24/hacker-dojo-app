@@ -60,5 +60,6 @@ export const NOTIFICATION_ROUTES = {
   bookings: '/(app)/(tabs)/book',
   events: '/(app)/(tabs)/events',
   settings: '/(app)/settings',
+  staff: '/(app)/staff',
   event: (eventId: string): NotificationHref => `/(app)/event/${eventId}`,
 } as const satisfies Record<string, NotificationHref | ((id: string) => NotificationHref)>;

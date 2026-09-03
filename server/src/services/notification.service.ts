@@ -2,7 +2,9 @@ import { env } from '../config/env.js';
 import { logger } from '../config/logger.js';
 import { notificationRepository } from '../repositories/notification.repository.js';
 import { emailService, isEmailConfigured } from './email.service.js';
-import { formatDojoRange } from '../utils/time.js';
+import { contentRepository } from '../repositories/content.repository.js';
+import { profileRepository } from '../repositories/profile.repository.js';
+import { formatDojoInstant, formatDojoRange } from '../utils/time.js';
 import type { PushTargetRow } from '../types/database.js';
 import { NOTIFICATION_ROUTES, routeTo, type NotificationData } from '../types/notifications.js';
 
@@ -360,6 +362,69 @@ export const notificationService = {
    * booked on another device or reinstalled since — the dedupe key is the
    * booking id, so the two can never both fire.
    */
+  /**
+   * Tell the stewards a stranger has asked to visit.
+   *
+   * A tour request used to land in `staff_queue` and nowhere else, which meant
+   * it was seen only if somebody happened to open the staff tab. The person who
+   * asked has no account and no app, so nobody was watching on their behalf
+   * either.
+   *
+   * Sent on the `default` channel deliberately: `bookings` and `events` are
+   * member-facing preferences a steward may reasonably have muted, and muting
+   * event announcements should not also mute the front desk.
+   */
+  async notifyStaffOfTourRequest(input: {
+    tourId: string;
+    when: string;
+    who: string;
+  }): Promise<SendReport> {
+    const targets = await notificationRepository.staffPushTargets();
+    if (targets.length === 0) return emptyReport();
+
+    return this.send(
+      targets.map((target) => ({
+        profileId: target.profileId,
+        token: target.token,
+        channel: 'default' as const,
+        title: 'New tour request',
+        body: `${input.who} — ${input.when}`,
+        dedupeKey: `tour-request:${input.tourId}:${target.profileId}`,
+        data: routeTo(NOTIFICATION_ROUTES.staff),
+      })),
+    );
+  },
+
+  /**
+   * The day-before nudge for confirmed tours.
+   *
+   * Email, not push: the visitor has no account and no app, so there is no
+   * device to push to. Runs on a wide window and leans on the mailer's own
+   * dedupe key to stay idempotent across ticks.
+   */
+  async sendTourReminders(fromIso: string, toIso: string): Promise<number> {
+    const tours = await contentRepository.confirmedToursBetween(fromIso, toIso);
+    let sent = 0;
+
+    for (const tour of tours) {
+      let recipient = tour.guest_email;
+      if (!recipient && tour.profile_id) {
+        const profile = await profileRepository.findById(tour.profile_id);
+        recipient = profile?.email ?? null;
+      }
+      if (!recipient) continue;
+
+      const result = await emailService.sendTourReminder({
+        to: recipient,
+        name: tour.guest_name,
+        when: formatDojoInstant(tour.scheduled_for),
+      });
+      if (result.delivered) sent += 1;
+    }
+
+    return sent;
+  },
+
   async sendBookingReminders(withinMinutes: number): Promise<SendReport> {
     const report = emptyReport();
 

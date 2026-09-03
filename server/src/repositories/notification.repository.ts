@@ -272,6 +272,34 @@ export const notificationRepository = {
    * send — rather than recording after it — is what makes a crash mid-batch
    * safe to retry.
    */
+  /**
+   * Stewards and admins who can actually receive a push.
+   *
+   * Not paged: the staff list is a handful of people, not an audience, and the
+   * caller needs all of them in one message batch. Anyone without a token is
+   * excluded here rather than filtered later — a row with no device is not a
+   * recipient.
+   */
+  async staffPushTargets(): Promise<Array<{ profileId: string; token: string }>> {
+    type Row = { id: string; notification_preferences: { push_token: string | null } | null };
+
+    const rows = unwrapList<Row>(
+      await adminClient
+        .from('profiles')
+        .select('id, notification_preferences!inner(push_token)')
+        .in('role', ['steward', 'admin'])
+        .not('notification_preferences.push_token', 'is', null)
+        .returns<Row[]>(),
+      'Could not load the staff notification list.',
+    );
+
+    return rows
+      .filter((row): row is Row & { notification_preferences: { push_token: string } } =>
+        Boolean(row.notification_preferences?.push_token),
+      )
+      .map((row) => ({ profileId: row.id, token: row.notification_preferences.push_token }));
+  },
+
   async claimDelivery(input: {
     profileId: string;
     dedupeKey: string;
